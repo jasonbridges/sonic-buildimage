@@ -307,6 +307,11 @@ ifeq ($(SONIC_BUILD_JOBS),)
 override SONIC_BUILD_JOBS := $(SONIC_CONFIG_BUILD_JOBS)
 endif
 
+ifneq ($(GCP_ADC_CREDS),)
+SONIC_USE_DOCKER_BUILDKIT := y
+DOCKER_GCP_ADC_SECRET := --secret id=google_application_credentials,src=$(GCP_ADC_CREDS)
+endif
+
 DOCKER_IMAGE_REF = $*-$(DOCKER_USERNAME):$(DOCKER_USERTAG)
 DOCKER_DBG_IMAGE_REF = $*-$(DBG_IMAGE_MARK)-$(DOCKER_USERNAME):$(DOCKER_USERTAG)
 export DOCKER_USERNAME DOCKER_USERTAG
@@ -1031,7 +1036,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_SIMPLE_DOCKER_IMAGES)) : $(TARGET_PATH)/%.g
 	DBGOPT='$(DBGOPT)' \
 	scripts/prepare_docker_buildinfo.sh $* $($*.gz_PATH)/Dockerfile $(CONFIGURED_ARCH) $(TARGET_DOCKERFILE)/Dockerfile.buildinfo $(LOG)
 	docker info $(LOG)
-	docker build --no-cache \
+	$(if $(filter y,$(SONIC_USE_DOCKER_BUILDKIT)),DOCKER_BUILDKIT=1) docker build --no-cache $(DOCKER_GCP_ADC_SECRET) \
 		--build-arg http_proxy=$(HTTP_PROXY) \
 		--build-arg https_proxy=$(HTTPS_PROXY) \
 		--build-arg no_proxy=$(NO_PROXY) \
@@ -1189,7 +1194,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 		DBGOPT='$(DBGOPT)' \
 		scripts/prepare_docker_buildinfo.sh $* $($*.gz_PATH)/Dockerfile $(CONFIGURED_ARCH) $(LOG)
 		docker info $(LOG)
-		docker build --no-cache \
+		$(if $(filter y,$(SONIC_USE_DOCKER_BUILDKIT)),DOCKER_BUILDKIT=1) docker build --no-cache $(DOCKER_GCP_ADC_SECRET) \
 			--build-arg http_proxy=$(HTTP_PROXY) \
 			--build-arg https_proxy=$(HTTPS_PROXY) \
 			--build-arg no_proxy=$(NO_PROXY) \
@@ -1258,7 +1263,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_DBG_IMAGES)) : $(TARGET_PATH)/%-$(DBG_IMAG
 		DBGOPT='$(DBGOPT)' \
 		scripts/prepare_docker_buildinfo.sh $*-dbg $($*.gz_PATH)/Dockerfile-dbg $(CONFIGURED_ARCH) $(LOG)
 		docker info $(LOG)
-		docker build \
+		$(if $(filter y,$(SONIC_USE_DOCKER_BUILDKIT)),DOCKER_BUILDKIT=1) docker build $(DOCKER_GCP_ADC_SECRET) \
 			--no-cache \
 			--build-arg http_proxy=$(HTTP_PROXY) \
 			--build-arg https_proxy=$(HTTPS_PROXY) \
