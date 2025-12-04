@@ -498,6 +498,11 @@ SONIC_SLAVE_USER_BUILD = \
 		$(DOCKER_USER_BUILD) ; \
 	}
 
+ifneq ($(GCP_ADC_CREDS),)
+DOCKER_RUN += -v $(abspath $(GCP_ADC_CREDS)):/gcp-adc-creds.json:ro
+SONIC_OVERRIDE_BUILD_VARS += GCP_ADC_CREDS=/gcp-adc-creds.json
+endif
+
 SONIC_BUILD_INSTRUCTION :=  $(MAKE) \
                            -f slave.mk \
                            PLATFORM=$(PLATFORM) \

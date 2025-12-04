@@ -47,7 +47,17 @@ It might take some time, so be patient.
 After that all subsequent make commands will be executed inside this container.
 *Makefile* takes every target that is passed to make command and delegates it as an entry point to a container,
 making process of running container transparent.  
-  
+
+### Google Cloud Application Default Credentials
+If you need to access GCP resources during the build process, you can provide Application Default Credentials (ADC) by setting the `GCP_ADC_CREDS` variable.
+This variable should point to the JSON key file containing your credentials (usually `application_default_credentials.json`).
+The build system will mount this file into the build environment and make it available as a secret to the Docker builds.
+
+Example:
+```
+make GCP_ADC_CREDS=/path/to/application_default_credentials.json target/sonic.bin
+```
+
 ### Frontend  
 **rules/** has a collection of recipes for platform independent targets.
 Every recipe is a file that describes a metadata of a specific target, that is needed for its build.  

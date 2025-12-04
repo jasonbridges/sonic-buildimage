@@ -323,3 +323,8 @@ SONIC_PTF_ENV_PY_VER = py3
 
 # Add timeout on some process which may hangs
 BUILD_PROCESS_TIMEOUT ?= 0
+
+# GCP_ADC_CREDS - Path to Google Cloud Application Default Credentials JSON file.
+# If set, this file will be mounted into the build environment and available as a secret
+# (id=google_application_credentials) during docker builds.
+# GCP_ADC_CREDS = /path/to/application_default_credentials.json
