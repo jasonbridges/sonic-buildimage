@@ -94,11 +94,14 @@ export DOCKER_BASE_ARCH
 export CROSS_BUILD_ENVIRON
 export BLDENV
 export BUILD_WORKDIR
+export GZ_COMPRESS_PROGRAM
 export MIRROR_SNAPSHOT
 export SONIC_OS_VERSION
 export FILES_PATH
 export PROJECT_ROOT
 export PTF_ENV_PY_VER
+export ARTIFACT_REGISTRY_URL_DEFAULT
+export ENABLE_ARTIFACT_REGISTRY_APT
 
 ###############################################################################
 ## Utility rules
@@ -591,7 +594,7 @@ define docker-image-save
         docker-squash -t $(1):$(call docker-get-tag,$(1)) $(1):$(call docker-get-tag,$(1)) $(LOG); \
     fi
     @echo "Saving docker image $(1):$(call docker-get-tag,$(1))" $(LOG)
-        docker save $(1):$(call docker-get-tag,$(1)) | $(DOCKER_SAVE_COMPRESS_CMD) > $(2)
+	docker save $(1):$(call docker-get-tag,$(1)) | $(DOCKER_SAVE_COMPRESS_CMD) > $(2)
     if [ x$(SONIC_CONFIG_USE_NATIVE_DOCKERD_FOR_BUILD) == x"y" ]; then
         @echo "Removing docker image $(1):$(call docker-get-tag,$(1))" $(LOG)
         docker rmi -f $(1):$(call docker-get-tag,$(1)) $(LOG)
@@ -1633,7 +1636,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 	j2 -f env files/initramfs-tools/arista-convertfs.j2 onie-image.conf > files/initramfs-tools/arista-convertfs
 
 	$(if $($*_DOCKERS),
-		j2 files/build_templates/sonic_debian_extension.j2 > sonic_debian_extension.sh
+		IMAGE_TYPE=$($*_IMAGE_TYPE) j2 files/build_templates/sonic_debian_extension.j2 > sonic_debian_extension.sh
 		chmod +x sonic_debian_extension.sh,
 	)
 
@@ -1676,6 +1679,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 		MASTER_MDM_VERSION=$(MASTER_MDM_VERSION) \
 		MASTER_MDS_VERSION=$(MASTER_MDS_VERSION) \
 		MASTER_FLUENTD_VERSION=$(MASTER_FLUENTD_VERSION) \
+		ARTIFACT_REGISTRY_URL_DEFAULT=$(ARTIFACT_REGISTRY_URL_DEFAULT) \
 			./build_debian.sh $(LOG)
 
 		USERNAME="$(USERNAME)" \
