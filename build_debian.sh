@@ -1,6 +1,6 @@
 #!/bin/bash
 ## This script is to automate the preparation for a debian file system, which will be used for
-## an ONIE installer image.
+## an installer image.
 ##
 ## USAGE:
 ##   USERNAME=username PASSWORD=password ./build_debian
@@ -9,6 +9,8 @@
 ##          The name of the default admin user
 ##   PASSWORD
 ##          The password, expected by chpasswd command
+
+
 
 ## Default user
 [ -n "$USERNAME" ] || {
@@ -50,6 +52,10 @@ TRUSTED_GPG_DIR=$BUILD_TOOL_PATH/trusted.gpg.d
     echo "Error: Invalid ONIE_IMAGE_PART_SIZE in onie image config file"
     exit 1
 }
+[ -n "$XBOOTLDR_PART_SIZE" ] || {
+    echo "Error: Invalid XBOOTLDR_PART_SIZE in onie image config file"
+    exit 1
+}
 [ -n "$INSTALLER_PAYLOAD" ] || {
     echo "Error: Invalid INSTALLER_PAYLOAD in onie image config file"
     exit 1
@@ -64,9 +70,11 @@ if [ "$IMAGE_TYPE" = "aboot" ]; then
 fi
 
 if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
-  FILESYSTEM_ROOT="${SONIE_FILESYSTEM_ROOT}"
   HOSTNAME=sonie
+  FILESYSTEM_ROOT="${FILESYSTEM_ROOT}-recovery"
 fi
+
+
 
 ## Check if not a last stage of RFS build
 if [[ $RFS_SPLIT_LAST_STAGE != y ]]; then
@@ -361,6 +369,7 @@ sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y in
     squashfs-tools          \
     dosfstools              \
     $bootloader_packages    \
+    systemd-boot            \
     rsyslog                 \
     screen                  \
     hping3                  \
@@ -836,26 +845,6 @@ if [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]]; then
     do
         sudo LANG=C chroot $FILESYSTEM_ROOT passwd -e ${user}
     done
-fi
-
-if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
-  echo "Invoking recovery_image_build.sh for recovery image generation..."
-  # Export necessary variables for the script
-  export FILESYSTEM_ROOT
-  export OUTPUT_RECOVERY_IMAGE
-  export LINUX_KERNEL_VERSION
-  export CONFIGURED_ARCH
-  export SIGNING_KEY
-  export SIGNING_CERT
-  export GZ_COMPRESS_PROGRAM
-  export BOOT_IMAGE_TYPE
-  export IMAGE_TYPE
-
-  # Disable networking.service to prevent ifupdown from starting standard networking on boot
-  # This avoids conflicts with ONIE discovery in recovery mode.
-  sudo LANG=C chroot $FILESYSTEM_ROOT systemctl disable networking.service || true
-
-  ./recovery_image_build.sh
 fi
 
 ## Compress most file system into squashfs file

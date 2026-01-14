@@ -94,6 +94,7 @@ export DOCKER_BASE_ARCH
 export CROSS_BUILD_ENVIRON
 export BLDENV
 export BUILD_WORKDIR
+GZ_COMPRESS_PROGRAM ?= gzip
 export GZ_COMPRESS_PROGRAM
 export MIRROR_SNAPSHOT
 export SONIC_OS_VERSION
@@ -290,6 +291,17 @@ DOCKER_BUILD_ENV += DOCKER_BUILDKIT=1
 endif
 
 include $(RULES_PATH)/*.mk
+# Explicitly include sonie-uki.mk first to ensure its targets are defined before
+# any rules that might depend on them.
+include $(RULES_PATH)/sonie-uki.mk
+
+# Include all other .mk files from the rules directory, excluding the sonie-specific
+# ones which are handled explicitly.
+include $(filter-out %/sonie-uki.mk %/sonie-image.mk, $(wildcard $(RULES_PATH)/*.mk))
+
+# Explicitly include sonie-image.mk last to ensure it is processed after its
+# dependencies have been defined.
+include $(RULES_PATH)/sonie-image.mk
 ifneq ($(CONFIGURED_PLATFORM), undefined)
 ifeq ($(PDDF_SUPPORT), y)
 PDDF_DIR = pddf
@@ -1183,6 +1195,8 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 		$$(addsuffix -install,$$(addprefix $(DEBS_PATH)/,$$($$*.gz_INSTALL_DEBS))) \
 		$$($$*.gz_PATH)/Dockerfile.j2 \
 		$(call dpkg_depend,$(TARGET_PATH)/%.gz.dep)
+	$(info DEBUG: Starting recipe for $@)
+
 	$(HEADER)
 
 	# Load the target deb from DPKG cache
@@ -1200,6 +1214,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 		mkdir -p $(TARGET_PATH)/vcache/$* $($*.gz_PATH)/vcache $(LOG)
 		sudo mount --bind $($*.gz_DEBS_PATH) $($*.gz_PATH)/debs $(LOG)
 		sudo mount --bind $($*.gz_FILES_PATH) $($*.gz_PATH)/files $(LOG)
+		mkdir -p $(PYTHON_DEBS_PATH) $(LOG)
 		sudo mount --bind $(PYTHON_DEBS_PATH) $($*.gz_PATH)/python-debs $(LOG)
 		sudo mount --bind $(PYTHON_WHEELS_PATH) $($*.gz_PATH)/python-wheels $(LOG)
 		# Export variables for j2. Use path for unique variable names, e.g. docker_orchagent_debs
@@ -1408,7 +1423,6 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_RFS_TARGETS)) : $(TARGET_PATH)/% : \
 			./build_debian.sh $(LOG)
 
 		$(call SAVE_CACHE,$*,$@)
-
 	fi
 
 	$(FOOTER)
@@ -1660,6 +1674,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 		IMAGE_TYPE=$($*_IMAGE_TYPE) \
 		TARGET_PATH=$(TARGET_PATH) \
 		ONIE_IMAGE_PART_SIZE=$(ONIE_IMAGE_PART_SIZE) \
+		XBOOTLDR_PART_SIZE=$(XBOOTLDR_PART_SIZE) \
 		SONIC_ENFORCE_VERSIONS=$(SONIC_ENFORCE_VERSIONS) \
 		TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
 		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
@@ -1687,6 +1702,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 		TARGET_MACHINE=$(dep_machine) \
 		IMAGE_TYPE=$($*_IMAGE_TYPE) \
 		ONIE_IMAGE_PART_SIZE=$(ONIE_IMAGE_PART_SIZE) \
+		XBOOTLDR_PART_SIZE=$(XBOOTLDR_PART_SIZE) \
 		SONIC_ENABLE_IMAGE_SIGNATURE="$(SONIC_ENABLE_IMAGE_SIGNATURE)" \
 		SECURE_UPGRADE_MODE="$(SECURE_UPGRADE_MODE)" \
 		SECURE_UPGRADE_DEV_SIGNING_KEY="$(SECURE_UPGRADE_DEV_SIGNING_KEY)" \
@@ -1708,7 +1724,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 	)
 
 	$(if $($*_DOCKERS),
-		rm sonic_debian_extension.sh,
+		rm -f sonic_debian_extension.sh,
 	)
 
 	chmod a+x $@
