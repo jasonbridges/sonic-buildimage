@@ -63,11 +63,17 @@ if [ "$IMAGE_TYPE" = "aboot" ]; then
     TARGET_BOOTLOADER="aboot"
 fi
 
+if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
+  FILESYSTEM_ROOT="${SONIE_FILESYSTEM_ROOT}"
+  HOSTNAME=sonie
+fi
+
 ## Check if not a last stage of RFS build
 if [[ $RFS_SPLIT_LAST_STAGE != y ]]; then
 
 ## Prepare the file system directory
 if [[ -d $FILESYSTEM_ROOT ]]; then
+    sudo umount -R $FILESYSTEM_ROOT || true
     sudo rm -rf $FILESYSTEM_ROOT || die "Failed to clean chroot directory"
 fi
 mkdir -p $FILESYSTEM_ROOT
@@ -81,7 +87,7 @@ if [ "$TARGET_BOOTLOADER" != "aboot" ]; then
 fi
 
 ## ensure proc is mounted
-sudo mount proc /proc -t proc || true
+sudo mount proc /proc -t proc || echo "Failed to mount /proc"
 
 ## Build the host debian base system
 echo '[INFO] Build host debian base system...'
@@ -126,6 +132,7 @@ sudo cp files/apt/apt.conf.d/{81norecommends,apt-{clean,gzip-indexes,no-language
 ## Note: set lang to prevent locale warnings in your chroot
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y update
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y upgrade
+sudo LANG=C chroot $FILESYSTEM_ROOT apt policy
 
 echo '[INFO] Install and setup eatmydata'
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install eatmydata
@@ -142,7 +149,9 @@ if [[ $CROSS_BUILD_ENVIRON == y ]]; then
 fi
 
 ## docker and mkinitramfs on target system will use pigz/unpigz automatically
-sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install pigz
+if [[ $GZ_COMPRESS_PROGRAM == pigz ]]; then
+    sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install pigz
+fi
 
 ## Install initramfs-tools and linux kernel
 ## Note: initramfs-tools recommends depending on busybox, and we really want busybox for
@@ -235,9 +244,8 @@ if [[ $CONFIGURED_ARCH == armhf ]]; then
 fi
 sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT curl -o /tmp/docker.asc -fsSL https://download.docker.com/linux/debian/gpg
 sudo LANG=C chroot $FILESYSTEM_ROOT mv /tmp/docker.asc /etc/apt/trusted.gpg.d/
-sudo tee $FILESYSTEM_ROOT/etc/apt/sources.list.d/docker.list >/dev/null <<EOF
-deb [arch=$CONFIGURED_ARCH] https://download.docker.com/linux/debian $IMAGE_DISTRO stable
-EOF
+sudo LANG=C chroot $FILESYSTEM_ROOT add-apt-repository \
+                                    "deb [arch=$CONFIGURED_ARCH] https://download.docker.com/linux/debian $IMAGE_DISTRO stable"
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get update
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install docker-ce=${DOCKER_VERSION} docker-ce-cli=${DOCKER_VERSION} containerd.io=${CONTAINERD_IO_VERSION}
 
@@ -351,6 +359,7 @@ sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y in
     sysfsutils              \
     e2fsprogs               \
     squashfs-tools          \
+    dosfstools              \
     $bootloader_packages    \
     rsyslog                 \
     screen                  \
@@ -384,6 +393,11 @@ sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y in
     ethtool                 \
     zstd                    \
     nvme-cli
+
+if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
+    sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT ln -sf /lib/systemd/systemd /init
+    sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT ln -sf /lib/systemd/system/initrd.target lib/systemd/system/default.target
+fi
 
 sudo cp files/initramfs-tools/pzstd $FILESYSTEM_ROOT/etc/initramfs-tools/hooks/pzstd
 sudo chmod +x $FILESYSTEM_ROOT/etc/initramfs-tools/hooks/pzstd
@@ -457,19 +471,26 @@ if [[ $TARGET_BOOTLOADER == grub ]]; then
     fi
 
     sudo cp $debs_path/${GRUB_PKG}*.deb $FILESYSTEM_ROOT/$PLATFORM_DIR/grub
+elif [[ $TARGET_BOOTLOADER == systemd-boot ]]; then
+    echo "Installing systemd-boot..."
+    # systemd-boot is part of systemd package which is already installed.
+    # We install refind to get the ext4 EFI driver.
+    sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get install -y refind
+    # Ensure standard ESP structure for drivers
+    # We will copy the driver during installation in default_platform.conf
 fi
 
 ## Disable kexec supported reboot which was installed by default
 sudo sed -i 's/LOAD_KEXEC=true/LOAD_KEXEC=false/' $FILESYSTEM_ROOT/etc/default/kexec
 
 # Ensure that 'logrotate-config.service' is set as a dependency to start before 'logrotate.service'.
-sudo mkdir $FILESYSTEM_ROOT/etc/systemd/system/logrotate.service.d
+sudo mkdir -p $FILESYSTEM_ROOT/etc/systemd/system/logrotate.service.d
 sudo cp files/image_config/logrotate/logrotateOverride.conf $FILESYSTEM_ROOT/etc/systemd/system/logrotate.service.d/logrotateOverride.conf
 
 ## Remove sshd host keys, and will regenerate on first sshd start
 sudo rm -f $FILESYSTEM_ROOT/etc/ssh/ssh_host_*_key*
 sudo cp files/sshd/host-ssh-keygen.sh $FILESYSTEM_ROOT/usr/local/bin/
-sudo mkdir $FILESYSTEM_ROOT/etc/systemd/system/ssh.service.d
+sudo mkdir -p $FILESYSTEM_ROOT/etc/systemd/system/ssh.service.d
 sudo cp files/sshd/override.conf $FILESYSTEM_ROOT/etc/systemd/system/ssh.service.d/override.conf
 # Config sshd
 # 1. Set 'UseDNS' to 'no'
@@ -537,6 +558,7 @@ sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y in
 ## Create /var/run/redis folder for docker-database to mount
 sudo mkdir -p $FILESYSTEM_ROOT/var/run/redis
 
+if [[ "${IMAGE_TYPE}" != "recovery" ]]; then
 ## Config DHCP for eth0
 sudo tee -a $FILESYSTEM_ROOT/etc/network/interfaces > /dev/null <<EOF
 
@@ -544,6 +566,7 @@ auto eth0
 allow-hotplug eth0
 iface eth0 inet dhcp
 EOF
+fi
 
 sudo cp files/dhcp/rfc3442-classless-routes $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d
 sudo cp files/dhcp/sethostname $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
@@ -566,6 +589,12 @@ j2 files/build_templates/default_users.json.j2 | sudo tee $FILESYSTEM_ROOT/etc/s
 sudo LANG=c chroot $FILESYSTEM_ROOT chmod 600 /etc/sonic/default_users.json
 sudo LANG=c chroot $FILESYSTEM_ROOT chown root:shadow /etc/sonic/default_users.json
 
+# For debugging
+if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
+  # Safely pipe the user:password combination into chpasswd running inside the chroot
+  echo "root:google" | sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot "$FILESYSTEM_ROOT" chpasswd
+fi
+
 ## Copy over clean-up script
 sudo cp ./files/scripts/core_cleanup.py $FILESYSTEM_ROOT/usr/bin/core_cleanup.py
 
@@ -580,6 +609,7 @@ sudo cp ./asic_config_checksum $FILESYSTEM_ROOT/etc/sonic/asic_config_checksum
 
 ## Check if not a last stage of RFS build
 fi
+
 
 if [[ $RFS_SPLIT_FIRST_STAGE == y ]]; then
     echo '[INFO] Finished with RFS first stage'
@@ -796,7 +826,7 @@ sudo LANG=C chroot $FILESYSTEM_ROOT fuser -km /proc || true
 sudo timeout 15s bash -c 'until LANG=C chroot $0 umount /proc; do sleep 1; done' $FILESYSTEM_ROOT || true
 
 ## Prepare empty directory to trigger mount move in initramfs-tools/mount_loop_root, implemented by patching
-sudo mkdir $FILESYSTEM_ROOT/host
+sudo mkdir -p $FILESYSTEM_ROOT/host
 
 
 if [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]]; then
@@ -806,6 +836,26 @@ if [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]]; then
     do
         sudo LANG=C chroot $FILESYSTEM_ROOT passwd -e ${user}
     done
+fi
+
+if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
+  echo "Invoking recovery_image_build.sh for recovery image generation..."
+  # Export necessary variables for the script
+  export FILESYSTEM_ROOT
+  export OUTPUT_RECOVERY_IMAGE
+  export LINUX_KERNEL_VERSION
+  export CONFIGURED_ARCH
+  export SIGNING_KEY
+  export SIGNING_CERT
+  export GZ_COMPRESS_PROGRAM
+  export BOOT_IMAGE_TYPE
+  export IMAGE_TYPE
+
+  # Disable networking.service to prevent ifupdown from starting standard networking on boot
+  # This avoids conflicts with ONIE discovery in recovery mode.
+  sudo LANG=C chroot $FILESYSTEM_ROOT systemctl disable networking.service || true
+
+  ./recovery_image_build.sh
 fi
 
 ## Compress most file system into squashfs file
