@@ -133,7 +133,7 @@ Environment="DOCKER_RAMDISK=true"' | sudo tee "${FILESYSTEM_ROOT}/etc/systemd/sy
 }
 
 #######################################
-# Generates a FIT image (UEFI Universal Payload compatible).
+# Generates a FIT image (Universal Payload compatible).
 # Globals:
 #   FILESYSTEM_ROOT
 #   LINUX_KERNEL_VERSION
@@ -143,7 +143,7 @@ Environment="DOCKER_RAMDISK=true"' | sudo tee "${FILESYSTEM_ROOT}/etc/systemd/sy
 #   None
 #######################################
 generate_fit_image() {
-  echo "Generating FIT image (UEFI Universal Payload compatible)..."
+  echo "Generating FIT image (Universal Payload compatible)..."
 
   # Generate ITS file
   cat << EOF > target.its

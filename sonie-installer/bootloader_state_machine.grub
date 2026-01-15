@@ -1,5 +1,5 @@
 #######################################
-# Implementation of the Ostara boot state machine in GRUB.
+# Implementation of the A/B/C boot state machine in GRUB.
 #
 # The environment is stored in the EFI partition at the root level.
 # It contains the variables and their possible values:
@@ -26,7 +26,6 @@
 #   install_env: Flag loaded from file.
 #   bootcount_env: Flag loaded from file.
 #   rollback_env: Flag loaded from file.
-#   netboot: Set to netboot_env.
 #   bootcount: Set to bootcount_env.
 #   warmboot: Set to warmboot_env.
 #   install: Set to install_env.
@@ -37,13 +36,13 @@
 #######################################
 function load_state {
   echo "Loading state"
-  if [ ! -s "(hd0,gpt1)/gpins_env" ]; then
+  if [ ! -s "(hd0,gpt1)/sonie_env" ]; then
     echo "State File not detected"
     return
   fi
 
   # GRUB does not support local variables, so we use global scope.
-  env_file="(hd0,gpt1)/gpins_env"
+  env_file="(hd0,gpt1)/sonie_env"
   load_env --file "${env_file}"
   set warmboot="${warmboot_env}"
   set install="${install_env}"
@@ -137,12 +136,12 @@ function compute_state {
 #######################################
 function save_state {
   # Don't save the state if we don't detect Google ONIE
-  if [ ! -s "(hd0,gpt1)/gpins_env" ]; then
+  if [ ! -s "(hd0,gpt1)/sonie_env" ]; then
     echo "State File not detected"
     return
   fi
   echo "Saving state"
-  env_file="(hd0,gpt1)/gpins_env"
+  env_file="(hd0,gpt1)/sonie_env"
   set warmboot_env="${warmboot}"
   set install_env="${install}"
   set bootcount_env="${bootcount}"
