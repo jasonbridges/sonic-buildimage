@@ -290,7 +290,7 @@ DOCKER_SECRET_ARGS += --secret id=google_application_credentials,src=$(GCP_ADC_C
 DOCKER_BUILD_ENV += DOCKER_BUILDKIT=1
 endif
 
-include $(RULES_PATH)/*.mk
+
 # Explicitly include sonie-uki.mk first to ensure its targets are defined before
 # any rules that might depend on them.
 include $(RULES_PATH)/sonie-uki.mk

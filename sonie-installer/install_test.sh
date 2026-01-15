@@ -312,6 +312,78 @@ test_install_esp_bootloader() {
 }
 
 # Run tests
+#######################################
+# Tests load_configs for directory switching and file loading.
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
+#######################################
+test_load_configs() {
+    echo "test_load_configs..."
+    (
+        setup_mocks
+
+        # 1. Setup specific test environment
+        # Use 'command mktemp' to bypass the 'mktemp' mock defined in setup_mocks
+        TEST_CONFIG_DIR="$(command mktemp -d)"
+        export SCRIPT_DIR="${TEST_CONFIG_DIR}"
+
+        # Create dummy config files
+        # machine.conf (should be read by read_conf_file)
+        echo "machine_conf_loaded=1" > "${TEST_CONFIG_DIR}/machine.conf"
+
+        # onie-image.conf (should be sourced directly)
+        echo "export onie_image_conf_loaded=1" > "${TEST_CONFIG_DIR}/onie-image.conf"
+
+        # onie-image-extra.conf (wildcard source)
+        echo "export onie_image_extra_loaded=1" > "${TEST_CONFIG_DIR}/onie-image-extra.conf"
+
+        # 3. Execution
+        source_script
+
+        # Override read_conf_file spy AFTER sourcing script, because script defines it too
+        read_conf_file() {
+            if [[ "$1" == "${TEST_CONFIG_DIR}/machine.conf" ]]; then
+                 export machine_conf_read_called=1
+            fi
+        }
+
+        # Re-export SCRIPT_DIR after sourcing
+        export SCRIPT_DIR="${TEST_CONFIG_DIR}"
+
+        # Run function under test
+        load_configs
+
+        # 4. Assertions
+
+        # Verify onie-image.conf sourced
+        if [[ "${onie_image_conf_loaded:-0}" -ne 1 ]]; then
+            echo "FAIL: onie-image.conf was not sourced"
+            exit 1
+        fi
+
+        # Verify glob sourcing
+        if [[ "${onie_image_extra_loaded:-0}" -ne 1 ]]; then
+            echo "FAIL: onie-image-*.conf glob was not sourced"
+            exit 1
+        fi
+
+        # Verify read_conf_file called
+        if [[ "${machine_conf_read_called:-0}" -ne 1 ]]; then
+            echo "FAIL: read_conf_file was not called for machine.conf"
+            exit 1
+        fi
+
+        # Cleanup
+        rm -rf "${TEST_CONFIG_DIR}"
+        echo "PASS"
+    )
+}
+
+# Run tests
 test_detect_environment_onie
 test_detect_environment_sonie_ram
 test_detect_environment_sonic
@@ -319,6 +391,7 @@ test_check_root_pass
 test_check_root_fail
 test_check_asic_platform_mismatch
 test_install_esp_bootloader
+test_load_configs
 
 rm -f "${TEMP_SCRIPT}"
 echo "All tests passed."

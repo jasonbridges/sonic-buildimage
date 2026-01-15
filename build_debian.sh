@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ## This script is to automate the preparation for a debian file system, which will be used for
 ## an installer image.
 ##
@@ -243,19 +244,24 @@ echo '[INFO] Install docker'
 ## Install apparmor utils since they're missing and apparmor is enabled in the kernel
 ## Otherwise Docker will fail to start
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install apparmor
+sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y update
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install apt-transport-https \
                                                        ca-certificates \
-                                                       curl
+                                                       curl \
+                                                       gnupg2
 if [[ $CONFIGURED_ARCH == armhf ]]; then
     # update ssl ca certificates for secure pem
     sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT c_rehash
 fi
 sudo https_proxy=$https_proxy LANG=C chroot $FILESYSTEM_ROOT curl -o /tmp/docker.asc -fsSL https://download.docker.com/linux/debian/gpg
 sudo LANG=C chroot $FILESYSTEM_ROOT mv /tmp/docker.asc /etc/apt/trusted.gpg.d/
-sudo LANG=C chroot $FILESYSTEM_ROOT add-apt-repository \
-                                    "deb [arch=$CONFIGURED_ARCH] https://download.docker.com/linux/debian $IMAGE_DISTRO stable"
+echo "deb [arch=$CONFIGURED_ARCH] https://download.docker.com/linux/debian $IMAGE_DISTRO stable" | sudo tee $FILESYSTEM_ROOT/etc/apt/sources.list.d/docker.list
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get update
 sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y install docker-ce=${DOCKER_VERSION} docker-ce-cli=${DOCKER_VERSION} containerd.io=${CONTAINERD_IO_VERSION}
+
+# Uninstall 'python3-gi' installed as part of 'software-properties-common' to remove debian version of 'PyGObject'
+# pip version of 'PyGObject' will be installed during installation of 'sonic-host-services'
+sudo LANG=C chroot $FILESYSTEM_ROOT apt-get -y remove gnupg2 python3-gi
 
 install_kubernetes () {
     local ver="$1"
@@ -370,6 +376,7 @@ sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y in
     dosfstools              \
     $bootloader_packages    \
     systemd-boot            \
+    systemd-boot-efi        \
     rsyslog                 \
     screen                  \
     hping3                  \
@@ -584,6 +591,15 @@ sudo cp files/dhcp/graphserviceurl $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks
 sudo cp files/dhcp/snmpcommunity $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
 sudo cp files/dhcp/vrf $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
 
+if [ -f files/image_config/ntp/ntpsec ]; then
+    sudo cp ./files/image_config/ntp/ntpsec $FILESYSTEM_ROOT/etc/init.d/
+fi
+
+if [ -f files/image_config/ntp/ntp-systemd-wrapper ]; then
+    sudo mkdir -p $FILESYSTEM_ROOT/usr/libexec/ntpsec/
+    sudo cp ./files/image_config/ntp/ntp-systemd-wrapper $FILESYSTEM_ROOT/usr/libexec/ntpsec/
+fi
+
 ## Version file part 1
 sudo mkdir -p $FILESYSTEM_ROOT/etc/sonic
 if [ -f files/image_config/sonic_release ]; then
@@ -593,10 +609,15 @@ fi
 # Default users info
 export password_expire="$( [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]] && echo true || echo false )"
 export username="${USERNAME}"
+export uid="$(sudo grep ^${USERNAME} $FILESYSTEM_ROOT/etc/passwd | cut -d: -f3)"
+export gid="$(sudo grep ^${USERNAME} $FILESYSTEM_ROOT/etc/passwd | cut -d: -f4)"
 export password="$(sudo grep ^${USERNAME} $FILESYSTEM_ROOT/etc/shadow | cut -d: -f2)"
 j2 files/build_templates/default_users.json.j2 | sudo tee $FILESYSTEM_ROOT/etc/sonic/default_users.json
 sudo LANG=c chroot $FILESYSTEM_ROOT chmod 600 /etc/sonic/default_users.json
 sudo LANG=c chroot $FILESYSTEM_ROOT chown root:shadow /etc/sonic/default_users.json
+
+# Patch tmpfs mounts to be owned by default user
+sudo sed -i "s/size=128m,mode=755/size=128m,mode=755,uid=$uid,gid=$gid/g" $FILESYSTEM_ROOT/etc/fstab
 
 # For debugging
 if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
@@ -712,17 +733,16 @@ sudo LANG=C chroot $FILESYSTEM_ROOT /bin/bash -c "echo 0 > /etc/fips/fips_enable
 # #################
 #   secure boot
 # #################
-if [[ $SECURE_UPGRADE_MODE == 'dev' || $SECURE_UPGRADE_MODE == "prod" ]]; then
+if [[ $SECURE_UPGRADE_MODE == 'dev' || $SECURE_UPGRADE_MODE == "prod" && $SONIC_ENABLE_SECUREBOOT_SIGNATURE != 'y' ]]; then
+    # note: SONIC_ENABLE_SECUREBOOT_SIGNATURE is a feature that signing just kernel,
+    # SECURE_UPGRADE_MODE is signing all the boot component including kernel.
+    # its required to do not enable both features together to avoid conflicts.
     echo "Secure Boot support build stage: Starting .."
-
-	sudo cp $debs_path/grub-efi*.deb $FILESYSTEM_ROOT
-	basename_deb_packages=$(basename -a $debs_path/grub-efi*.deb | sed 's,^,./,')
-	sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt -y --allow-downgrades install $basename_deb_packages
-	sudo rm $FILESYSTEM_ROOT/grub-efi*.deb
 
     # debian secure boot dependecies
     sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install      \
-        shim-unsigned
+        shim-unsigned \
+        grub-efi
 
     if [ ! -f $SECURE_UPGRADE_SIGNING_CERT ]; then
         echo "Error: SONiC SECURE_UPGRADE_SIGNING_CERT=$SECURE_UPGRADE_SIGNING_CERT key missing"
@@ -751,20 +771,23 @@ if [[ $SECURE_UPGRADE_MODE == 'dev' || $SECURE_UPGRADE_MODE == "prod" ]]; then
             exit 1
         fi
 
-        sudo $sonic_su_prod_signing_tool -a $CONFIGURED_ARCH \
+        sudo -E $sonic_su_prod_signing_tool -a $CONFIGURED_ARCH \
                                          -r $FILESYSTEM_ROOT \
                                          -l $LINUX_KERNEL_VERSION \
                                          -o $OUTPUT_SEC_BOOT_DIR \
+                                         -c $SECURE_UPGRADE_SIGNING_CERT \
+                                         -f $SECURE_UPGRADE_PROD_TOOL_CONFIG \
                                          $SECURE_UPGRADE_PROD_TOOL_ARGS
 
         # verifying all EFI files and kernel modules in $OUTPUT_SEC_BOOT_DIR
         sudo ./scripts/secure_boot_signature_verification.sh -e $OUTPUT_SEC_BOOT_DIR \
                                                              -c $SECURE_UPGRADE_SIGNING_CERT \
-                                                             -k ${FILESYSTEM_ROOT}/usr/lib/modules
+                                                             -k $FILESYSTEM_ROOT
 
         # verifying vmlinuz file.
-        sudo ./scripts/secure_boot_signature_verification.sh -e $FILESYSTEM_ROOT/boot/vmlinuz-${LINUX_KERNEL_VERSION}-sonic-${CONFIGURED_ARCH} \
-                                                             -c $SECURE_UPGRADE_SIGNING_CERT
+        sudo ./scripts/secure_boot_signature_verification.sh -e $FILESYSTEM_ROOT/boot/vmlinuz-${LINUX_KERNEL_VERSION}-${CONFIGURED_ARCH} \
+                                                             -c $SECURE_UPGRADE_SIGNING_CERT \
+                                                             -k $FILESYSTEM_ROOT
     fi
     echo "Secure Boot support build stage: END."
 fi
@@ -836,6 +859,7 @@ sudo timeout 15s bash -c 'until LANG=C chroot $0 umount /proc; do sleep 1; done'
 
 ## Prepare empty directory to trigger mount move in initramfs-tools/mount_loop_root, implemented by patching
 sudo mkdir -p $FILESYSTEM_ROOT/host
+echo "onie_platform=$CONFIGURED_PLATFORM" | sudo tee $FILESYSTEM_ROOT/host/machine.conf
 
 
 if [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]]; then
@@ -859,6 +883,7 @@ sudo rm -f $FILESYSTEM_ROOT/etc/resolvconf/resolv.conf.d/original
 sudo cp files/image_config/resolv-config/resolv.conf.head $FILESYSTEM_ROOT/etc/resolvconf/resolv.conf.d/head
 sudo rm -f $FILESYSTEM_ROOT/etc/resolv.conf
 sudo touch $FILESYSTEM_ROOT/etc/resolv.conf
+
 
 ## Optimize filesystem size
 if [ "$BUILD_REDUCE_IMAGE_SIZE" = "y" ]; then

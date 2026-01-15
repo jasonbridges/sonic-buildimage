@@ -8,9 +8,6 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 DEFAULT_PLATFORM_CONF="${SCRIPT_DIR}/default_platform.conf"
 
-
-
-
 # Mocks
 mock_files=()
 
@@ -188,7 +185,6 @@ test_init_console_settings_custom() {
 test_find_device_from_partdev() {
   echo "test_find_device_from_partdev..."
   if (
-    # Arrange
     source "${DEFAULT_PLATFORM_CONF}"
 
     # Create mock sysfs structure
@@ -217,10 +213,8 @@ test_find_device_from_partdev() {
 
     export SYSFS_BASE="${sys_base}"
 
-    # Act
     res=$(find_device_from_partdev "/dev/nvme0n1p1")
 
-    # Assert
     if [[ "$res" != "/dev/nvme0n1" ]]; then
        echo "FAIL: Expected /dev/nvme0n1 for partdev nvme0n1p1, got $res"
        exit 1
@@ -279,7 +273,6 @@ test_make_partition_dev() {
 test_disk_needs_formatting() {
   echo "test_disk_needs_formatting..."
   if (
-    # Arrange
     source "${DEFAULT_PLATFORM_CONF}"
     trap_push() { :; }
 
@@ -437,13 +430,11 @@ test_create_sonie_gpt_partition_logic() {
       return 0
     fi
   }
-
   output=$(
     source "${DEFAULT_PLATFORM_CONF}"
     trap_push() { :; }
     create_sonie_gpt_partition "/dev/sda" 2>&1
   )
-
   # Should delete partition 2
   [[ "$output" == *"deleting partition 2"* ]] || { echo "FAIL: Did not delete partition 2. Output: $output"; exit 1; }
   [[ "$output" == *"Partition #4 is available"* ]] || { echo "FAIL: Did not find partition 4 available. Output: $output"; exit 1; }
@@ -495,31 +486,26 @@ test_create_sonie_gpt_partition_reuse() {
        return 0
     fi
   }
-
   output=$(
     source "${DEFAULT_PLATFORM_CONF}"
     trap_push() { :; }
     create_sonie_gpt_partition "/dev/sda" 2>&1
   )
-
   # Should NOT delete partition 2
   if echo "$output" | grep -q "deleting partition 2"; then
     echo "FAIL: Should not have deleted partition 2. Output: $output"
     exit 1
   fi
-
   # Should reuse partition 2
   if ! echo "$output" | grep -q "Reusing existing XBOOTLDR partition 2"; then
     echo "FAIL: Did not reuse partition 2. Output: $output"
     exit 1
   fi
-
   # Should update attributes
   if ! echo "$output" | grep -q "Updating reused partition 2 attributes"; then
     echo "FAIL: Did not update attributes for reused partition. Output: $output"
     exit 1
   fi
-
   echo "PASS"
 }
 
@@ -783,7 +769,6 @@ test_install_grub_to_esp() {
     rm -rf "$mock_fs_root"
     exit 1
   fi
-
   # Verify grub.cfg content
   local generated_cfg="${mock_os}/grub/grub.cfg"
   if [ ! -f "$generated_cfg" ]; then

@@ -173,14 +173,13 @@ detect_environment() {
 #   None
 #######################################
 load_configs() {
-    cd "${SCRIPT_DIR}"
-    [ -r ./machine.conf ] && read_conf_file "./machine.conf"
+    [ -r "${SCRIPT_DIR}/machine.conf" ] && read_conf_file "${SCRIPT_DIR}/machine.conf"
 
     # shellcheck disable=SC1091
-    [ -r ./onie-image.conf ] && . ./onie-image.conf
+    [ -r "${SCRIPT_DIR}/onie-image.conf" ] && . "${SCRIPT_DIR}/onie-image.conf"
 
     # shellcheck disable=SC1090
-    for f in ./onie-image-*.conf; do
+    for f in "${SCRIPT_DIR}"/onie-image-*.conf; do
         [ -r "${f}" ] && . "${f}"
     done
 
