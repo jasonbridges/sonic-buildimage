@@ -409,10 +409,6 @@ enroll_secure_boot_keys() {
   if [[ -n "${DB_CERT}" && -f "${DB_CERT}" ]]; then
       echo "Enrolling db from ${DB_CERT}..."
       cmd+=(--add-db "${guid}" "${DB_CERT}")
-      cmd+=(--enroll-redhat) # Also enroll RedHat/Microsoft keys if desired? Or maybe just ours?
-      # If we enroll-redhat, it adds to existing db?
-      # The script originally had --enroll-redhat. Let's keep it if compatible.
-      # But --enroll-redhat might add its own keys.
   fi
   
   if [[ -n "${KEK_CERT}" && -f "${KEK_CERT}" ]]; then
@@ -423,7 +419,6 @@ enroll_secure_boot_keys() {
   if [[ -n "${PK_CERT}" && -f "${PK_CERT}" ]]; then
       echo "Enrolling PK from ${PK_CERT} (Enabling Secure Boot)..."
       cmd+=(--set-pk "${guid}" "${PK_CERT}")
-      # --secure-boot flag might be redundant if PK is set, but let's add it to be sure
       cmd+=(--secure-boot)
   fi
   

@@ -13,6 +13,7 @@
 #   -6              Use IPv6 (default)
 #   -4              Use IPv4
 #   --install-disk  Enable installation to disk
+#   --secure-boot   Enable secure boot
 #
 # Environment Variables (Bazel):
 #   RUNFILES_DIR    Path to Bazel runfiles directory
@@ -55,9 +56,9 @@ rlocation_or_local() {
 readonly PLATFORM="$([ -f .platform ] && cat .platform || echo vs)"
 
 # Resolve artifacts using Bazel runfiles or local fallback
-readonly UKI_FILE="$(rlocation_or_local "sonie-vs.efi" "target/sonie-${PLATFORM}.efi")"
-readonly SONIC_BIN="$(rlocation_or_local "target/sonic-${PLATFORM}.bin" "target/sonic-${PLATFORM}.bin")"
-readonly SONIE_BIN="$(rlocation_or_local "sonie-vs.bin" "target/sonie-${PLATFORM}.efi.bin")"
+readonly UKI_FILE="$(rlocation_or_local "sonie-${PLATFORM}.efi" "target/sonie-${PLATFORM}.efi")"
+readonly SONIC_BIN="$(rlocation_or_local "sonic-${PLATFORM}.bin" "target/sonic-${PLATFORM}.bin")"
+readonly SONIE_BIN="$(rlocation_or_local "sonie-${PLATFORM}.bin" "target/sonie-${PLATFORM}.efi.bin")"
 
 readonly PK_AUTH="PK.auth"
 readonly KEK_AUTH="KEK.auth"
@@ -163,60 +164,15 @@ resolve_ovmf_paths() {
 build_docker_image() {
   echo "Building Unified Docker Image..."
   echo "Using build context: $DOCKER_CONTEXT_DIR"
-  
-  if [[ -f "sonie-test-trixie/Dockerfile" ]]; then
-      # Local mode, or structure preserved
-      docker build --no-cache --network host -t "$TEST_IMAGE_NAME" sonie-test-trixie
-  elif [[ -d "$DOCKER_CONTEXT_DIR" ]]; then
-      # Bazel mode: Context is likely DOCKER_CONTEXT_DIR or its parent?
-      # If DOCKER_CONTEXT_DIR contains Dockerfile, but Dockerfile has COPY dockers/..., 
-      # verification of context structure is needed.
-      # If Dockerfile says "COPY sonie-test-trixie/qemu_runner.sh", 
-      # the context root must contain "sonie-test-trixie".
-      # In runfiles, if we have __main__/sonie-test-trixie/Dockerfile,
-      # and we use __main__ as context, it should work.
-      
-      local context_root
-      # Try to find the repo root in runfiles
-      if [[ "$DOCKER_CONTEXT_DIR" == *"sonie-test-trixie" ]]; then
-          context_root="$(dirname "$DOCKER_CONTEXT_DIR")"
-          echo "Guessed context root: $context_root"
-          if [[ -f "$context_root/sonie-test-trixie/Dockerfile" ]]; then
-             docker build --no-cache --network host -t "$TEST_IMAGE_NAME" -f "$context_root/sonie-test-trixie/Dockerfile" "$context_root"
-             return
-          fi
-      fi
-      
-      # Fallback: Create a temporary context that matches what Dockerfile expects
-      echo "Adapting Docker context via structured copy..."
-      local context_tmp="docker_context_tmp"
-      rm -rf "$context_tmp"
-      mkdir -p "$context_tmp/sonie-test-trixie"
-      
-      # Copy all files from the found directory to the structured temp dir
-      # This assumes DOCKER_CONTEXT_DIR points to .../sonie-test-trixie
-      cp -r "$DOCKER_CONTEXT_DIR"/* "$context_tmp/sonie-test-trixie/"
-      
-      docker build --no-cache --network host -t "$TEST_IMAGE_NAME" -f "$context_tmp/sonie-test-trixie/Dockerfile" "$context_tmp"
-      rm -rf "$context_tmp"
-  else
-      err "Could not find Dockerfile context"
-      exit 1
+
+  if [[ ! -d "$DOCKER_CONTEXT_DIR" ]]; then
+    err "Error: Docker context directory $DOCKER_CONTEXT_DIR not found."
+    exit 1
   fi
+
+  # Build the image using the context directory
+  docker build --no-cache --network host -t "$TEST_IMAGE_NAME" "$DOCKER_CONTEXT_DIR"
 }
-
-#######################################
-# Prepare the imageset archive.
-# Globals:
-#   IMAGESET_FILE
-#   IMAGESET_DIR
-#   SONIC_BIN
-#   SONIE_BIN
-#   PLATFORM
-#######################################
-
-
-
 
 #######################################
 # Main entry point.
@@ -248,7 +204,7 @@ main() {
 
 
 
-  # --- 2.5 PREPARE SECURE BOOT KEYS ---
+  # --- PREPARE SECURE BOOT KEYS ---
   # We use environment variables for key paths
   # Only export them if Secure Boot is requested
   if [[ "$secure_boot" -eq 1 ]]; then
