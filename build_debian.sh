@@ -619,12 +619,6 @@ sudo LANG=c chroot $FILESYSTEM_ROOT chown root:shadow /etc/sonic/default_users.j
 # Patch tmpfs mounts to be owned by default user
 sudo sed -i "s/size=128m,mode=755/size=128m,mode=755,uid=$uid,gid=$gid/g" $FILESYSTEM_ROOT/etc/fstab
 
-# For debugging
-if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
-  # Safely pipe the user:password combination into chpasswd running inside the chroot
-  echo "root:google" | sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot "$FILESYSTEM_ROOT" chpasswd
-fi
-
 ## Copy over clean-up script
 sudo cp ./files/scripts/core_cleanup.py $FILESYSTEM_ROOT/usr/bin/core_cleanup.py
 
