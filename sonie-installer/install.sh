@@ -352,7 +352,6 @@ main() {
 
     # Ensure /host/grub points to /boot/grub
     log_info "Creating /host/grub directory..."
-    mkdir -p /host
     mkdir -p /host/grub
     if ! mountpoint -q /host/grub; then
         if [ -d /boot/grub ]; then

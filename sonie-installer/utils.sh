@@ -12,6 +12,13 @@ log_warn() { printf "WARN: %s\n" "$*" >&2; }
 # Logs an error message to stderr.
 log_error() { printf "ERROR: %s\n" "$*" >&2; }
 
+# Checks if given directory is a mountpoint; used in cases where we can't be sure mountpoint is installed.
+is_mounted() {
+  awk -v mp="$1" \
+    '$2 == mp { found = 1; exit } END { exit found ? 0 : 1; }' \
+    /proc/mounts
+}
+
 # Appends a command to a trap, preserving existing traps.
 _trap_push() {
     local next="${1}"

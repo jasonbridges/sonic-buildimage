@@ -9,6 +9,8 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 DEFAULT_PLATFORM_CONF="${SCRIPT_DIR}/default_platform.conf"
 
 
+
+
 # Mocks
 mock_files=()
 
@@ -98,9 +100,6 @@ grub-install() {
   echo "MOCK_GRUB_INSTALL: $*"
 }
 
-# Mock log functions
-log_warn() { echo "WARN: $*" >&2; }
-log_info() { echo "INFO: $*" >&2; }
 # --- Tests ---
 
 #######################################
@@ -643,7 +642,6 @@ test_create_partition_sonic() {
   echo "PASS"
 }
 
-
 #######################################
 # Verifies that create_sonie_uefi_partition cleans up legacy boot variables.
 #
@@ -692,8 +690,6 @@ test_create_sonie_uefi_partition_cleanup() {
       echo "Boot0005* ONIE"
     }
 
-    # Ensure install_env is NOT 'sonie' to trigger cleanup
-    install_env="onie"
     rm -f /tmp/mock_efibootmgr_log
     create_sonie_uefi_partition "/dev/sda" 2>&1
   )
@@ -752,8 +748,6 @@ test_install_grub_to_esp() {
     source "${DEFAULT_PLATFORM_CONF}"
     trap_push() { :; }
 
-    # Reset install_env
-    install_env="onie"
     # Mock sgdisk -p for EF00 detection
     sgdisk() {
       if [[ "$1" == "-p" ]]; then

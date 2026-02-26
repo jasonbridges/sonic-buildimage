@@ -14,7 +14,7 @@ readonly SCRIPT_DIR
 
 # Source the library to be tested.
 # shellcheck source=bootloader_state_machine.sh
-source "${SCRIPT_DIR}/bootloader_state_machine.grub"
+source "${SCRIPT_DIR}/../bootloader_state_machine.grub"
 
 #######################################
 # Mock for GRUB's load_env.

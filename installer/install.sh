@@ -30,8 +30,8 @@ read_conf_file() {
     while IFS='=' read -r var value || [ -n "$var" ]
     do
         # remove newline character
-        var=$(echo $var | tr -d '\r\n')
-        value=$(echo $value | tr -d '\r\n')
+        var="$(echo "$var" | tr -d '\r\n')"
+        value="$(echo "$value" | tr -d '\r\n')"
         # remove comment string
         var=${var%#*}
         value=${value%#*}
@@ -92,7 +92,7 @@ detect_machine_conf() {
 }
 
 check_root() {
-    if [ $(id -u) -ne 0 ]
+    if [ "$(id -u)" -ne 0 ]
         then log_error "Please run as root"
         exit 1
     fi
@@ -101,7 +101,7 @@ check_root() {
 main() {
     detect_environment
 
-    cd $(dirname $0)
+    cd "$(dirname "$0")"
     if [ -r ./machine.conf ]; then
         read_conf_file "./machine.conf"
     fi
@@ -131,12 +131,12 @@ main() {
     # below value to env value. Platform specific installer.conf
     # will override this value if necessary by reading $onie_platform
     # after this.
-    ONIE_IMAGE_PART_SIZE="${ONIE_IMAGE_PART_SIZE:-32768}"
+    ONIE_IMAGE_PART_SIZE="${ONIE_IMAGE_PART_SIZE:-%%ONIE_IMAGE_PART_SIZE%%}"
 
     # Default var/log device size in MB
     VAR_LOG_SIZE=${VAR_LOG_SIZE:-4096}
 
-    [ -r platforms/$onie_platform ] && . platforms/$onie_platform
+    [ -r "platforms/$onie_platform" ] && . "platforms/$onie_platform"
 
     # Verify image platform is inside devices list
     if [ "$install_env" = "onie" ] || [ "$install_env" = "sonie" ]; then
@@ -171,11 +171,11 @@ main() {
         onie_initrd_tmp=${onie_initrd_tmp:-/}
     fi
 
-    arch="${arch:-amd64}"
+    arch="${arch:-%%ARCH%%}"
 
     # The build system prepares this script by replacing %%DEMO-TYPE%%
     # with "OS" or "DIAG".
-    demo_type="${demo_type:-OS}"
+    demo_type="${demo_type:-%%DEMO_TYPE%%}"
 
     # take final partition size after platform installer.conf override
     demo_part_size=$ONIE_IMAGE_PART_SIZE
@@ -204,9 +204,9 @@ main() {
 
     image_dir="image-$TARGET_SLOT"
     # Use SONIC_A / SONIC_B as label for A/B logic compatibility
-    demo_volume_label="${demo_volume_label:-SONiC-OS}"
+    demo_volume_revision_label="${demo_volume_revision_label:-SONiC-OS}"
 
-    image_version="${image_version:-sonie.0-dirty-20260206.222306}"
+    image_version="${image_version:-%%IMAGE_VERSION%%}"
     # timestamp is unused currently but kept for reference
     timestamp="$(date -u +%Y%m%d)"
 
@@ -217,18 +217,14 @@ main() {
         . ./platform.conf
     fi
 
-    if [ "$install_env" = "onie" ]; then
-        # Create/format the flash
-        create_partition
-        mount_partition
-    elif [ "$install_env" = "sonie" ]; then
+    if [ "$install_env" = "onie" ] || [ "$install_env" = "sonie" ]; then
         # Create/format the flash
         create_partition
         mount_partition
     elif [ "$install_env" = "sonic" ]; then
         demo_mnt="/host"
         # Get current SONiC image (grub/aboot/uboot)
-        eval running_sonic_revision="$(cat /proc/cmdline | sed -n 's/^.*loop=\/*image-\(\S\+\)\/.*$/\1/p')"
+        running_sonic_revision="$(cat /proc/cmdline | sed -n 's/^.*loop=\/*image-\(\S\+\)\/.*$/\1/p')"
         # Verify SONiC image exists
         if [ ! -d "$demo_mnt/image-$running_sonic_revision" ]; then
             log_error "SONiC installation is corrupted: path $demo_mnt/image-$running_sonic_revision doesn't exist"
@@ -240,32 +236,30 @@ main() {
             exit 0
         fi
         # Remove extra SONiC images if any
-        for f in $demo_mnt/image-* ; do
-            if [ -d $f ] && [ "$f" != "$demo_mnt/image-$running_sonic_revision" ] && [ "$f" != "$demo_mnt/$image_dir" ]; then
+        for f in "$demo_mnt"/image-* ; do
+            if [ -d "$f" ] && [ "$f" != "$demo_mnt/image-$running_sonic_revision" ] && [ "$f" != "$demo_mnt/$image_dir" ]; then
                 log_info "Removing old SONiC installation $f"
-                rm -rf $f
+                rm -rf "$f"
             fi
         done
     else
         demo_mnt="build_raw_image_mnt"
-        demo_dev=$cur_wd/"target/sonic-vs-amd64.raw"
-
-        mkfs.ext4 -L "$demo_volume_label" $demo_dev
+        demo_dev="$cur_wd/target/sonic-vs-amd64.raw"
+        mkfs.ext4 -L "$demo_volume_label" "$demo_dev"
 
         log_info "Mounting $demo_dev on $demo_mnt..."
-        mkdir $demo_mnt
-        mount -t auto -o loop $demo_dev $demo_mnt
-    fi
+        mkdir "$demo_mnt"
+        mount -t auto -o loop "$demo_dev" "$demo_mnt"
     fi
 
     log_info "Installing SONiC to $demo_mnt/$image_dir"
 
     # Create target directory or clean it up if exists
-    if [ -d $demo_mnt/$image_dir ]; then
+    if [ -d "$demo_mnt/$image_dir" ]; then
         log_info "Directory $demo_mnt/$image_dir/ already exists. Cleaning up..."
-        rm -rf $demo_mnt/$image_dir/*
+        rm -rf "$demo_mnt/$image_dir/"*
     else
-        mkdir $demo_mnt/$image_dir || {
+        mkdir "$demo_mnt/$image_dir" || {
             log_error "Unable to create SONiC directory"
             exit 1
         }
@@ -284,23 +278,23 @@ main() {
         GRUB_EXCLUDE="boot/grub*"
     fi
 
-    if [ x"$docker_inram" = x"on" ]; then
+    if [ "$docker_inram" = "on" ]; then
         # when disk is small, keep dockerfs.tar.gz in disk, expand it into ramfs during initrd
-        unzip -o $INSTALLER_PAYLOAD -x "platform.tar.gz" $GRUB_EXCLUDE -d $demo_mnt/$image_dir
+        unzip -o "$INSTALLER_PAYLOAD" -x "platform.tar.gz" $GRUB_EXCLUDE -d "$demo_mnt/$image_dir"
     else
-        unzip -o $INSTALLER_PAYLOAD -x "$FILESYSTEM_DOCKERFS" "platform.tar.gz" $GRUB_EXCLUDE -d $demo_mnt/$image_dir
+        unzip -o "$INSTALLER_PAYLOAD" -x "$FILESYSTEM_DOCKERFS" "platform.tar.gz" $GRUB_EXCLUDE -d "$demo_mnt/$image_dir"
 
         if [ "$install_env" = "onie" ]; then
             TAR_EXTRA_OPTION="--numeric-owner"
         else
             TAR_EXTRA_OPTION="--numeric-owner --warning=no-timestamp"
         fi
-        mkdir -p $demo_mnt/$image_dir/$DOCKERFS_DIR
-        unzip -op $INSTALLER_PAYLOAD "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/$DOCKERFS_DIR
+        mkdir -p "$demo_mnt/$image_dir/$DOCKERFS_DIR"
+        unzip -op "$INSTALLER_PAYLOAD" "$FILESYSTEM_DOCKERFS" | tar xz $TAR_EXTRA_OPTION -f - -C "$demo_mnt/$image_dir/$DOCKERFS_DIR"
     fi
 
-    mkdir -p $demo_mnt/$image_dir/platform
-    unzip -op $INSTALLER_PAYLOAD "platform.tar.gz" | tar xz $TAR_EXTRA_OPTION -f - -C $demo_mnt/$image_dir/platform
+    mkdir -p "$demo_mnt/$image_dir/platform"
+    unzip -op "$INSTALLER_PAYLOAD" "platform.tar.gz" | tar xz $TAR_EXTRA_OPTION -f - -C "$demo_mnt/$image_dir/platform"
 
     if [ "$install_env" = "onie" ] || [ "$install_env" = "sonie" ]; then
         # Store machine description in target file system
@@ -308,10 +302,10 @@ main() {
             # onie_ variable are generate at runtime.
             # they are no longer hardcoded in /etc/machine.conf
             # also remove single quotes around the value
-            set | grep ^onie | sed -e "s/='/=/" -e "s/'$//" > $demo_mnt/machine.conf
+            set | grep ^onie | sed -e "s/='/=/" -e "s/'$//" > "$demo_mnt/machine.conf"
         else
             if [ -n "$machine_conf" ] && [ -r "$machine_conf" ]; then
-                cp "$machine_conf" $demo_mnt/machine.conf
+                cp "$machine_conf" "$demo_mnt/machine.conf"
             else
                 log_warn "machine.conf not found to copy"
             fi
@@ -320,7 +314,7 @@ main() {
 
     log_info "ONIE_IMAGE_PART_SIZE=$demo_part_size"
 
-    extra_cmdline_linux="${extra_cmdline_linux:-}"
+    extra_cmdline_linux="${extra_cmdline_linux:-%%EXTRA_CMDLINE_LINUX%%}"
     # Inherit the FIPS option, so not necessary to do another reboot after upgraded
     if grep -q '\bsonic_fips=1\b' /proc/cmdline && echo " $extra_cmdline_linux" | grep -qv '\bsonic_fips=.\b'; then
         extra_cmdline_linux="$extra_cmdline_linux sonic_fips=1"
@@ -331,7 +325,7 @@ main() {
     # Ensure XBOOTLDR is mounted at /boot for subsequent installers (sonic-installer)
     # log_info "Preparing environment for subsequent installers..."
 
-    if mountpoint -q /boot; then
+    if is_mounted /boot; then
         log_info "/boot is already mounted (likely in SONIE environment)."
     else
         log_error "/boot is not mounted. Exiting."
@@ -343,18 +337,16 @@ main() {
         exit 1
     else
         log_info "/boot/grub found."
-        log_info "Listing /boot/grub contents:"
-        ls -l /boot/grub
     fi
 
     log_info "Ensuring ${demo_mnt} is mounted to /host"
     # unmount /host/grub first
-    if mountpoint -q /host/grub; then
+    if is_mounted /host/grub; then
         log_info "/host/grub is mounted, unmounting..."
         umount /host/grub || log_warn "Failed to unmount /host/grub"
     fi
     # Ensure /host is mounted so sonic-installer can find image-A/B
-    if mountpoint -q /host; then
+    if is_mounted /host; then
         log_info "/host is already mounted. Remounting to ensure it points to ${demo_mnt}..."
         umount /host || log_warn "Failed to unmount /host"
     fi
@@ -379,11 +371,9 @@ main() {
 
     if [ -d /boot/grub ]; then
         log_info "/boot/grub found."
-        log_info "Listing /boot/grub contents:"
-        ls -l /boot/grub
     fi
 
-    if ! mountpoint -q /host/grub; then
+    if ! is_mounted /host/grub; then
         if [ -d /boot/grub ]; then
             log_info "Mounting /boot/grub to /host/grub"
             mount --bind /boot/grub /host/grub || log_error "Failed to bind /boot/grub to /host/grub"
@@ -395,11 +385,7 @@ main() {
     fi
 
     # Update Bootloader Menu with installed image
-    log_info "DEBUG: /host/grub before bootloader_menu_config:"
-    ls -la /host/grub || true
     bootloader_menu_config
-    log_info "DEBUG: /host/grub after bootloader_menu_config:"
-    ls -la /host/grub || true
     # Set NOS mode if available.  For manufacturing diag installers, you
     # probably want to skip this step so that the system remains in ONIE
     # "installer" mode for installing a true NOS later.
@@ -408,7 +394,7 @@ main() {
     fi
 
     # Cleanup temporary mounts manually since we are clearing the trap
-    if [ -n "$demo_mnt" ] && mountpoint -q "$demo_mnt"; then
+    if [ -n "$demo_mnt" ] && is_mounted "$demo_mnt"; then
         if [ "$demo_mnt" != "/host" ]; then
             log_info "Unmounting temporary mount $demo_mnt (lazy)"
             umount -l "$demo_mnt" || log_warn "Failed to unmount $demo_mnt"

@@ -86,9 +86,14 @@ trap on_error ERR
 
 echo "Installing SONiC"
 
+KVM_CDROM_ARGS=()
+if [ -f "$ONIE_RECOVERY_ISO" ]; then
+    KVM_CDROM_ARGS=("-cdrom" "$ONIE_RECOVERY_ISO")
+fi
+
 /usr/bin/kvm -m $MEM \
     -name "onie" \
-    -boot "order=cd,once=d" -cdrom "$ONIE_RECOVERY_ISO" \
+    -boot "order=cd,once=d" "${KVM_CDROM_ARGS[@]}" \
     -device e1000,netdev=onienet \
     -netdev user,id=onienet,hostfwd=:0.0.0.0:3041-:22 \
     -vnc 0.0.0.0:0 \

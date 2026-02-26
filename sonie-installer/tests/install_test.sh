@@ -12,7 +12,7 @@ set -u
 # Constants
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly TEST_DIR
-readonly INSTALL_SCRIPT="${TEST_DIR}/install.sh"
+readonly INSTALL_SCRIPT="${TEST_DIR}/../install.sh"
 TEMP_SCRIPT="$(mktemp)"
 readonly TEMP_SCRIPT
 

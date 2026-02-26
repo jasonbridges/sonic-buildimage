@@ -30,6 +30,7 @@ SIGNING_KEY="${SIGNING_KEY:-db.key}"
 SIGNING_CERT="${SIGNING_CERT:-db.crt}"
 COMPRESSION_ALGO="${COMPRESSION_ALGO:-zstd}"
 BOOT_IMAGE_TYPE="${BOOT_IMAGE_TYPE:-uki}"
+ENABLE_ZSTD="${ENABLE_ZSTD:-}"
 
 #######################################
 # Calculate the aligned start address for the next PE section.
@@ -44,7 +45,7 @@ calculate_next_offset() {
   local -r prev_offset="$1"
   local -r prev_file="$2"
   local -r alignment="$3"
-  local -r padding="${4:-0}" 
+  local -r padding="${4:-0}"
   local size
   size=$(stat -Lc%s "${prev_file}")
   # Use ceiling division to align the next start address
@@ -76,15 +77,14 @@ build_initramfs() {
   echo '[Service]
 Environment="DOCKER_RAMDISK=true"' | sudo tee "${FILESYSTEM_ROOT}/etc/systemd/system/docker.service.d/10-ramdisk.conf" > /dev/null
 
-  # Install ONIE discovery service only for SONIE recovery images
+  # Install SONIE discovery service only for SONIE recovery images
   if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
-      echo "Installing ONIE discovery service for SONIE build..."
-      sudo cp files/image_config/onie-discovery/onie-discovery.service "${FILESYSTEM_ROOT}/etc/systemd/system/"
-      sudo cp files/image_config/onie-discovery/onie-discovery.sh "${FILESYSTEM_ROOT}/usr/bin/"
-      sudo cp files/image_config/onie-discovery/onie-dhcp-event.sh "${FILESYSTEM_ROOT}/usr/bin/"
-      sudo chmod 755 "${FILESYSTEM_ROOT}/usr/bin/onie-discovery.sh" "${FILESYSTEM_ROOT}/usr/bin/onie-dhcp-event.sh"
+      echo "Installing SONIE discovery service for SONIE build..."
+      sudo cp files/image_config/sonie-discovery/sonie-discovery.service "${FILESYSTEM_ROOT}/etc/systemd/system/"
+      sudo cp files/image_config/sonie-discovery/sonie-discovery.sh "${FILESYSTEM_ROOT}/usr/bin/"
+      sudo chmod 755 "${FILESYSTEM_ROOT}/usr/bin/sonie-discovery.sh"
       sudo mkdir -p "${FILESYSTEM_ROOT}/etc/systemd/system/multi-user.target.wants"
-      sudo ln -sf /etc/systemd/system/onie-discovery.service "${FILESYSTEM_ROOT}/etc/systemd/system/multi-user.target.wants/onie-discovery.service"
+      sudo ln -sf /etc/systemd/system/sonie-discovery.service "${FILESYSTEM_ROOT}/etc/systemd/system/multi-user.target.wants/sonie-discovery.service"
   fi
 
   initramfs_start=$(date +%s)
@@ -302,6 +302,14 @@ generate_uki() {
   rm -rf "${staging_dir}"
 }
 
+#######################################
+# Ensures the signing keys exist, creating them if necessary.
+# Globals:
+#   SIGNING_KEY
+#   SIGNING_CERT
+# Arguments:
+#   None
+#######################################
 ensure_keys() {
   if [[ ! -f "${SIGNING_KEY}" ]]; then
     openssl req -new -x509 -newkey rsa:2048 -keyout db.key -out db.crt -nodes -days 1 -subj "/CN=DB/"

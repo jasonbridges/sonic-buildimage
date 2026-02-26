@@ -120,7 +120,7 @@ setup_network() {
   ip link set dev br0 type bridge mcast_snooping 0 || echo "Warning: Failed to disable mcast_snooping"
 
   echo "Starting tcpdump..."
-  # tcpdump -n -i br0 -U -w "${LOG_DIR}/tcpdump.pcap" > "${LOG_DIR}/tcpdump.log" 2>&1 &
+  tcpdump -n -i br0 -U -w "${LOG_DIR}/tcpdump.pcap" > "${LOG_DIR}/tcpdump.log" 2>&1 &
 }
 
 #######################################
@@ -181,38 +181,34 @@ generate_disk() {
     # Debug mcopy
     mcopy -V
 
-    # Test small copy
-    echo "test" > test_small.txt
-    mcopy -i "${esp_part_image}" test_small.txt "::/test_small.txt"
-    echo "Small mcopy succeeded."
-
     # Copy UKI (large file)
     echo "Copying UKI (${uki_size_mb} MB)..."
 
     # Use loop mount to avoid OOM with mcopy on large files
-    mkdir -p /mnt/esp_tmp
-    mount -o loop "${esp_part_image}" /mnt/esp_tmp
+    local esp_tmp_dir
+    esp_tmp_dir=$(mktemp -d)
+    mount -o loop "${esp_part_image}" "${esp_tmp_dir}"
 
     # Use dd with controlled block size and sync to avoid memory spikes
     # Copy to linux.efi
     # Use dd with bs=4M and no sync flag to avoid OOM
-    dd if="${UKI_FILE}" of="/mnt/esp_tmp/EFI/BOOT/${uki_boot_name}" bs=4M status=progress
+    dd if="${UKI_FILE}" of="${esp_tmp_dir}/EFI/BOOT/${uki_boot_name}" bs=4M status=progress
     sync
 
     # If direct boot, also copy to BOOTX64.EFI
     if [[ -z "${grub_efi_file}" ]]; then
         echo "Populating BOOTX64.EFI from UKI..."
-        cp "/mnt/esp_tmp/EFI/BOOT/${uki_boot_name}" "/mnt/esp_tmp/EFI/BOOT/BOOTX64.EFI"
+        cp "${esp_tmp_dir}/EFI/BOOT/${uki_boot_name}" "${esp_tmp_dir}/EFI/BOOT/BOOTX64.EFI"
     fi
 
-    umount /mnt/esp_tmp
-    rmdir /mnt/esp_tmp
+    umount "${esp_tmp_dir}"
+    rmdir "${esp_tmp_dir}"
     echo "UKI copy succeeded."
 
     if [[ -n "${grub_efi_file}" ]]; then
       # Create Grub Config
       # Use minimal config to avoid serial/terminal issues
-      printf "set timeout=2\nset default=0\nmenuentry \"Boot UKI\" {\n    chainloader /EFI/BOOT/%s\n}\n" "${uki_boot_name}" > "${grub_config_file}"
+      printf 'set timeout=2\nset default=0\nmenuentry "Boot UKI" {\n    chainloader /EFI/BOOT/%s\n}\n' "${uki_boot_name}" > "${grub_config_file}"
       # Copy config to multiple locations for signed/shim loaded GRUBs
       mcopy -i "${esp_part_image}" "${grub_config_file}" ::/EFI/BOOT/grub.cfg
       mcopy -i "${esp_part_image}" "${grub_config_file}" ::/boot/grub/grub.cfg
@@ -410,7 +406,6 @@ configure_services() {
   # Wait for server
   echo "Waiting for Python server to bind to port ${HTTP_PORT}..."
   local started=0
-  set +e
   for i in {1..10}; do
     if ss -tulpn | grep -q ":${HTTP_PORT}"; then
       echo "Server is listening on port ${HTTP_PORT}"
@@ -418,11 +413,10 @@ configure_services() {
       break
     fi
     echo "Wait ${i}/10. ss output:"
-    ss -tulpn || true
-    ps aux | grep python || true
+    ss -tulpn
+    ps aux | grep python
     sleep 1
   done
-  set -e
 
   if [[ "${started}" -eq 0 ]]; then
     echo "ERROR: Python server failed to start."

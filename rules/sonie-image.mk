@@ -11,3 +11,8 @@ $(TARGET_PATH)/$(SONIE_IMAGE): $(TARGET_PATH)/$(SONIE_UKI)
 	SONIE_INSTALLER_PAYLOAD=$(TARGET_PATH)/$(SONIE_UKI).zip \
 	./build_image.sh $@
 	rm -f $(TARGET_PATH)/$(SONIE_UKI).zip
+
+# Alias for .bin target without architecture suffix
+ifneq ($(CONFIGURED_ARCH),arm64)
+$(TARGET_PATH)/sonie-$(CONFIGURED_PLATFORM).bin: $(TARGET_PATH)/$(SONIE_IMAGE)
+endif

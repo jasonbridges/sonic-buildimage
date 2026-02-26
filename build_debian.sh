@@ -72,7 +72,7 @@ fi
 
 if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
   HOSTNAME=sonie
-  FILESYSTEM_ROOT="${FILESYSTEM_ROOT}-recovery"
+  FILESYSTEM_ROOT="${FILESYSTEM_ROOT}-${TARGET_MACHINE}-recovery"
 fi
 
 
@@ -82,7 +82,7 @@ if [[ $RFS_SPLIT_LAST_STAGE != y ]]; then
 
 ## Prepare the file system directory
 if [[ -d $FILESYSTEM_ROOT ]]; then
-    sudo umount -R $FILESYSTEM_ROOT || true
+    sudo umount -R -f -l $FILESYSTEM_ROOT || true
     sudo rm -rf $FILESYSTEM_ROOT || die "Failed to clean chroot directory"
 fi
 mkdir -p $FILESYSTEM_ROOT
@@ -90,7 +90,7 @@ mkdir -p $FILESYSTEM_ROOT/$PLATFORM_DIR
 touch $FILESYSTEM_ROOT/$PLATFORM_DIR/firsttime
 
 bootloader_packages=""
-if [ "$TARGET_BOOTLOADER" != "aboot" ]; then
+if [[ "$TARGET_BOOTLOADER" != "aboot" && "$TARGET_BOOTLOADER" != "systemd-boot" ]]; then
     mkdir -p $FILESYSTEM_ROOT/$PLATFORM_DIR/grub
     bootloader_packages="grub2-common"
 fi
@@ -587,8 +587,10 @@ EOF
 fi
 
 sudo cp files/dhcp/rfc3442-classless-routes $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d
-sudo cp files/dhcp/sethostname $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
-sudo cp files/dhcp/sethostname6 $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
+if [[ "${IMAGE_TYPE}" != "recovery" ]]; then
+    sudo cp files/dhcp/sethostname $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
+    sudo cp files/dhcp/sethostname6 $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
+fi
 sudo cp files/dhcp/graphserviceurl $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
 sudo cp files/dhcp/snmpcommunity $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
 sudo cp files/dhcp/vrf $FILESYSTEM_ROOT/etc/dhcp/dhclient-exit-hooks.d/
@@ -668,8 +670,9 @@ if [[ $RFS_SPLIT_LAST_STAGE == y ]]; then
     sudo mount proc /proc -t proc || true
 
     sudo fuser -vm $FILESYSTEM_ROOT || true
+    sudo umount -R $FILESYSTEM_ROOT || true
     sudo rm -rf $FILESYSTEM_ROOT
-    sudo unsquashfs -no-xattrs -d $FILESYSTEM_ROOT $TARGET_PATH/$RFS_SQUASHFS_NAME
+    sudo unsquashfs -d $FILESYSTEM_ROOT $TARGET_PATH/$RFS_SQUASHFS_NAME
 
     ## make / as a mountpoint in chroot env, needed by dockerd
     pushd $FILESYSTEM_ROOT
@@ -863,8 +866,12 @@ sudo timeout 15s bash -c 'until LANG=C chroot $0 umount /proc; do sleep 1; done'
 
 ## Prepare empty directory to trigger mount move in initramfs-tools/mount_loop_root, implemented by patching
 sudo mkdir -p $FILESYSTEM_ROOT/host
-echo "onie_platform=$CONFIGURED_PLATFORM" | sudo tee $FILESYSTEM_ROOT/host/machine.conf
 
+# Pre-populate /host/machine.conf for recovery images (fallback for QEMU/Installer where /host isn't mounted)
+# On real hardware, the /host mount will overlay this file, so it's safe.
+if [[ "${IMAGE_TYPE}" == "recovery" ]]; then
+    echo "onie_platform=${CONFIGURED_PLATFORM}" | sudo tee $FILESYSTEM_ROOT/host/machine.conf
+fi
 
 if [[ "$CHANGE_DEFAULT_PASSWORD" == "y" ]]; then
     ## Expire default password for exitsing users that can do login

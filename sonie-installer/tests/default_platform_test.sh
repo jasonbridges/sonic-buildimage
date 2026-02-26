@@ -6,7 +6,7 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-DEFAULT_PLATFORM_CONF="${SCRIPT_DIR}/default_platform.conf"
+DEFAULT_PLATFORM_CONF="${SCRIPT_DIR}/../default_platform.conf"
 
 # Mocks
 mock_files=()
@@ -30,6 +30,12 @@ cat() {
 grep() {
   /bin/grep "$@"
 }
+
+# Mock for is_mounted
+is_mounted() {
+  grep -qs "$1" /proc/mounts
+}
+export -f is_mounted
 
 # Mock for cut command
 cut() {
@@ -107,7 +113,13 @@ log_warn() {
 }
 
 # Export all mocks so they are available in subshells (essential for tests sourcing scripts)
-export -f cat grep cut blkid sgdisk partprobe mkfs.ext4 mktemp mount umount trap_push grub-install log_info log_warn
+export -f cat grep cut blkid sgdisk partprobe mkfs.ext4 mktemp mount umount trap_push grub-install log_info log_warn partprobe_safe
+
+# Mock partprobe_safe
+partprobe_safe() {
+  echo "partprobe_safe $*"
+}
+
 
 # --- Tests ---
 
@@ -862,7 +874,7 @@ test_install_grub_to_esp() {
   )
 
   # Verify grub-install called
-  if ! echo "$output" | grep -q "MOCK_GRUB_INSTALL: --target=x86_64-efi --efi-directory=$mock_esp --boot-directory=$mock_os --bootloader-id=SONIE-TEST --recheck --modules=part_gpt part_msdos /dev/sda"; then
+  if ! echo "$output" | grep -q "MOCK_GRUB_INSTALL: --target=x86_64-efi --efi-directory=$mock_esp --boot-directory=$mock_os --bootloader-id=SONIE-TEST --recheck --modules=part_gpt part_msdos --disable-shim-lock --no-nvram /dev/sda"; then
     echo "FAIL: grub-install not called with expected args. Output: $output"
     rm -rf "$mock_fs_root"
     exit 1

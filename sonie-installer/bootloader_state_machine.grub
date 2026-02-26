@@ -26,6 +26,7 @@
 #   install_env: Flag loaded from file.
 #   bootcount_env: Flag loaded from file.
 #   rollback_env: Flag loaded from file.
+#   netboot: Set to netboot_env.
 #   bootcount: Set to bootcount_env.
 #   warmboot: Set to warmboot_env.
 #   install: Set to install_env.

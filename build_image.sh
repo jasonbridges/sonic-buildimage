@@ -159,14 +159,22 @@ generate_onie_installer_image()
     fi
 
     ## Generate an ONIE installer image
+    local mk_image_script="./onie-mk-demo.sh"
+    local demo_type_arg="OS"
+
+    if [ "$IMAGE_TYPE" = "sonie" ]; then
+        mk_image_script="./sonie-mk-image.sh"
+        demo_type_arg="sonie"
+    fi
+
     declare -a onie_mk_demo_args=(
         "$CONFIGURED_ARCH"
         "$TARGET_MACHINE"
         "$platform_arg"
         "$installer_dir"
-	"$platform_conf_file"
+        "$platform_conf_file"
         "$output_file"
-        "OS"
+        "$demo_type_arg"
         "$IMAGE_VERSION"
         "$part_size"
         "$INSTALLER_PAYLOAD"
@@ -183,8 +191,7 @@ generate_onie_installer_image()
     SECURE_UPGRADE_DEV_SIGNING_KEY="${SECURE_UPGRADE_DEV_SIGNING_KEY}" \
     SECURE_UPGRADE_PROD_TOOL_ARGS="${SECURE_UPGRADE_PROD_TOOL_ARGS}" \
     SECURE_UPGRADE_PROD_TOOL_CONFIG="${SECURE_UPGRADE_PROD_TOOL_CONFIG}" \
-        echo "DEBUG: onie-mk-demo.sh args: ${onie_mk_demo_args[@]}"
-        ./onie-mk-demo.sh "${onie_mk_demo_args[@]}"
+        "$mk_image_script" "${onie_mk_demo_args[@]}"
 }
 
 # Generate asic-specific device list
@@ -237,7 +244,7 @@ generate_sonie_installer_image()
     mkdir -p "$(dirname "$output_file")"
     sudo rm -f "$output_file"
     generate_device_list "./sonie-installer/platforms_asic"
-    generate_onie_installer_image "$output_file"
+    INSTALLER_PAYLOAD="$SONIE_INSTALLER_PAYLOAD" generate_onie_installer_image "$output_file"
 }
 #######################################
 # Builds the ONIE target (Installer, Raw, KVM).
@@ -558,6 +565,15 @@ build_recovery_image() {
     export OUTPUT_RECOVERY_IMAGE
     export LINUX_KERNEL_VERSION
     export CONFIGURED_ARCH
+
+    # Map Secure Upgrade keys to SIGNING_KEY/CERT if not already set
+    if [ -z "${SIGNING_KEY}" ] && [ -n "${SECURE_UPGRADE_DEV_SIGNING_KEY}" ]; then
+        SIGNING_KEY="${SECURE_UPGRADE_DEV_SIGNING_KEY}"
+    fi
+    if [ -z "${SIGNING_CERT}" ] && [ -n "${SECURE_UPGRADE_SIGNING_CERT}" ]; then
+        SIGNING_CERT="${SECURE_UPGRADE_SIGNING_CERT}"
+    fi
+
     export SIGNING_KEY
     export SIGNING_CERT
     export GZ_COMPRESS_PROGRAM
@@ -582,6 +598,61 @@ build_sonie_image() {
      local output_file="$1"
      echo "Build SONIE installer: ${output_file}"
 
+     # If PAYLOAD_UKI is set, we construct the payload zip here
+     local clean_payload=0
+     if [ -n "$PAYLOAD_UKI" ] && [ -n "$FILESYSTEM_ROOT" ]; then
+         echo "Constructing SONIE installer payload from ${PAYLOAD_UKI} and ${FILESYSTEM_ROOT}..."
+
+         SONIE_INSTALLER_PAYLOAD=$(mktemp --suffix=.zip)
+         rm "$SONIE_INSTALLER_PAYLOAD"
+         clean_payload=1
+
+         # Zip the UKI
+         # We want it at the root of the zip, usually.
+         # PAYLOAD_UKI might be a path like target/sonie-vs.efi
+         # We want it stored as sonie-vs.efi in the zip.
+         local uki_name
+         uki_name=$(basename "$PAYLOAD_UKI")
+
+         # Use a temp dir to stage content to ensure clean zip paths
+         local payload_stage
+         payload_stage=$(mktemp -d)
+
+         cp "$PAYLOAD_UKI" "$payload_stage/$uki_name"
+
+         # Handle Signed Grub
+         local signed_grub="${FILESYSTEM_ROOT}/usr/lib/grub/x86_64-efi/monolithic/grubx64.efi"
+         if [ -f "${signed_grub}" ]; then
+             echo "Adding signed grubx64.efi to payload"
+             cp "${signed_grub}" "$payload_stage/grubx64.efi"
+         else
+             echo "WARN: Signed Grub not found at ${signed_grub}"
+         fi
+
+         # Handle /grub content
+         echo "Adding /grub content to payload..."
+         mkdir -p "$payload_stage/grub/x86_64-efi"
+         mkdir -p "$payload_stage/grub/fonts"
+
+         if [ -d "${FILESYSTEM_ROOT}/usr/lib/grub/x86_64-efi" ]; then
+             cp -r "${FILESYSTEM_ROOT}/usr/lib/grub/x86_64-efi"/* "$payload_stage/grub/x86_64-efi/" || true
+         fi
+         if [ -d "${FILESYSTEM_ROOT}/usr/share/grub" ]; then
+             cp -r "${FILESYSTEM_ROOT}/usr/share/grub"/*.pf2 "$payload_stage/grub/fonts/" || true
+         fi
+
+         # Create the zip
+         # pushd/popd to zip relative paths
+         (
+             cd "$payload_stage"
+             zip -r "$SONIE_INSTALLER_PAYLOAD" ./*
+         )
+
+         # Cleanup stage
+         rm -rf "$payload_stage"
+         echo "Created payload at $SONIE_INSTALLER_PAYLOAD"
+     fi
+
      if [ -z "$SONIE_INSTALLER_PAYLOAD" ]; then
          echo "Error: SONIE_INSTALLER_PAYLOAD not set for 'sonie' image type"
          exit 1
@@ -594,6 +665,10 @@ build_sonie_image() {
      echo "DEBUG: Calling generate_sonie_installer_image with ${output_file}"
      generate_sonie_installer_image "$output_file"
      echo "DEBUG: generate_sonie_installer_image finished"
+
+     if [ "$clean_payload" -eq 1 ]; then
+         rm -f "$SONIE_INSTALLER_PAYLOAD"
+     fi
 }
 
 

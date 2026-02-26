@@ -96,11 +96,11 @@ setup_mocks() {
     # Mock grub-install
     grub-install() {
         echo "MOCK: grub-install $*"
-        if [[ "$*" != *"--no-nvram"* ]]; then
-             echo "FAIL: grub-install missing --no-nvram"
-             exit 1
-        fi
-        # Ensure we don't return failure
+        # In sonie mode, we might WANT nvram update, so don't enforce --no-nvram
+        # if [[ "$*" != *"--no-nvram"* ]]; then
+        #      echo "FAIL: grub-install missing --no-nvram"
+        #      return 1
+        # fi
         return 0
     }
 
@@ -117,16 +117,142 @@ setup_mocks() {
 sed '$d' "${INSTALL_SCRIPT}" > "${TEMP_SCRIPT}"
 # Patch TEMP_SCRIPT to comment out sourcing of default_platform.conf
 sed -i 's|\. "${SCRIPT_DIR}/default_platform.conf"|# . "${SCRIPT_DIR}/default_platform.conf"|' "${TEMP_SCRIPT}"
+# Patch TEMP_SCRIPT to use the correct SCRIPT_DIR (prevent overwrite)
+sed -i 's|SCRIPT_DIR="\$(cd "\${0%/\*}" && pwd)"|:|' "${TEMP_SCRIPT}"
+sed -i 's|SCRIPT_DIR="\$(pwd)"|:|' "${TEMP_SCRIPT}"
 
-test_sonie_update_flow() {
-    echo "Testing Sonie Update Flow..."
+# Helper to run test for a specific environment
+run_test_case() {
+    local test_env_name=$1
+    local expect_no_nvram=$2
+
+    echo "----------------------------------------------------------------"
+    echo "Running Test Case: Env=${test_env_name}, Expect --no-nvram=${expect_no_nvram}"
+    echo "----------------------------------------------------------------"
+
     (
+        # Setup specific MOCK_DIR for this run
+        MOCK_DIR=$(command mktemp -d)
+        trap 'rm -rf "${MOCK_DIR}"' EXIT
+
         # Source default_platform.conf manually first
         . "${INSTALLER_ROOT}/default_platform.conf"
 
         # Now source install.sh (patched)
         # shellcheck source=/dev/null
         . "${TEMP_SCRIPT}"
+
+        # Setup mocks with dynamic environment
+        setup_mocks() {
+            export install_env="${test_env_name}"
+            # Default to sonie-like behavior for other vars unless specified
+            export is_ram_root=1
+            export is_onie=0
+            export platform="test_sonie_platform"
+            export onie_platform="test_onie_platform"
+            export blk_dev="/dev/mockblk"
+
+            # Mock environment variables expected by default_platform.conf
+            export CONSOLE_PORT="0x3f8"
+            export CONSOLE_SPEED="115200"
+            export CONSOLE_DEV="0"
+            export sonie_part_size="100"
+            export sonie_volume_label="SONIE-OS"
+            export sonie_volume_revision_label="SONIE-OS-v1"
+
+            export ONIE_INSTALLER_PAYLOAD="${MOCK_DIR}/payload.zip"
+            touch "${ONIE_INSTALLER_PAYLOAD}"
+
+            # Mock Logging
+            log_info() { echo "INFO: $*"; }
+            log_warn() { echo "WARN: $*"; }
+            log_error() { echo "ERROR: $*"; }
+
+            # Mock helpers
+            read_conf_file() { :; }
+            _trap_push() { :; }
+            trap_push() { :; }
+
+            # Mock ESP content
+            command mkdir -p "${MOCK_DIR}/tmp_mount/EFI/SONiC-OS"
+            touch "${MOCK_DIR}/tmp_mount/EFI/SONiC-OS/grub.cfg"
+            echo "# Master Config" > "${MOCK_DIR}/tmp_mount/EFI/SONiC-OS/grub.cfg"
+
+            # Mock System Commands
+            mount() { echo "MOCK: mount $*"; }
+            umount() { echo "MOCK: umount $*"; }
+            mkdir() {
+                if [[ "$*" == *"/host"* ]] || [[ "$*" == *"/boot"* ]]; then
+                     echo "MOCK: mkdir $* (simulated)"
+                     return 0
+                fi
+                command mkdir "$@"
+                echo "MOCK: mkdir $*"
+            }
+            rmdir() { command rm -rf "$@"; echo "MOCK: rmdir $*"; }
+            mountpoint() { return 1; }
+            mktemp() {
+                if [[ "$*" == "-d" ]]; then
+                    command mkdir -p "${MOCK_DIR}/tmp_mount"
+                    echo "${MOCK_DIR}/tmp_mount"
+                else
+                    touch "${MOCK_DIR}/tmp_file"
+                    echo "${MOCK_DIR}/tmp_file"
+                fi
+            }
+            id() { echo 0; }
+
+            unzip() { echo "MOCK: unzip $*"; }
+
+            # Mock default_platform.conf functions
+            detect_environment() {
+                export install_env="${test_env_name}"
+                echo "MOCK: detect_environment set install_env=${test_env_name}"
+            }
+            detect_block_device() {
+                export blk_dev="/dev/mockblk"
+                export cur_part="/dev/mockblk1"
+                echo "MOCK: detect_block_device set blk_dev=$blk_dev";
+            }
+            load_configs() { :; }
+            check_root() { :; }
+            detect_machine_conf() { :; }
+            check_asic_platform() { :; }
+
+            # Mock partition creation (we don't care about details here)
+            create_partition() { echo "MOCK: create_partition"; }
+            mount_partition() {
+                export sonie_mnt="${MOCK_DIR}/mnt"
+                export demo_mnt="${sonie_mnt}"
+                command mkdir -p "${sonie_mnt}/grub"
+                echo "MOCK: mount_partition set sonie_mnt=$sonie_mnt"
+            }
+
+            # Mock grub-install
+            grub-install() {
+                echo "MOCK: grub-install $*"
+                if [ "${expect_no_nvram}" = "yes" ]; then
+                     if [[ "$*" != *"--no-nvram"* ]]; then
+                          echo "FAIL: grub-install missing --no-nvram (Expected for ${test_env_name})"
+                          return 1
+                     fi
+                else
+                     if [[ "$*" == *"--no-nvram"* ]]; then
+                          echo "FAIL: grub-install has --no-nvram (Unexpected for ${test_env_name})"
+                          return 1
+                     fi
+                fi
+                return 0
+            }
+
+            efibootmgr() {
+                if [[ "$*" == *"-B"* ]]; then
+                     echo "FAIL: efibootmgr -B called (should skip cleanup)"
+                     return 1
+                fi
+                echo "MOCK: efibootmgr $*"
+            }
+        }
 
         # Now setup mocks (overrides functions from default_platform.conf)
         setup_mocks
@@ -138,10 +264,8 @@ test_sonie_update_flow() {
         touch "${MOCK_DIR}/mnt/linux.efi"
 
         # Seed existing grub.cfg with SONiC entries for merging test
-
-
-        command mkdir -p "${MOCK_DIR}/tmp_mount/EFI/SONiC-OS"
-        cat > "${MOCK_DIR}/tmp_mount/EFI/SONiC-OS/grub.cfg" <<EOF
+        command mkdir -p "${MOCK_DIR}/mnt/grub"
+        cat > "${MOCK_DIR}/mnt/grub/grub.cfg" <<EOF
 menuentry 'SONiC-OS-Old' {
     search --label Old
     chainloader /old.efi
@@ -155,15 +279,12 @@ EOF
         main
 
         # Verify Content in OUTPUT grub.cfg
-
-
         local grub_cfg="${MOCK_DIR}/mnt/grub/grub.cfg"
 
         if grep -q "menuentry 'SONIC_A'" "${grub_cfg}"; then
             echo "PASS: grub.cfg contains SONIC_A"
         else
             echo "FAIL: grub.cfg missing SONIC_A"
-            cat "${grub_cfg}"
             exit 1
         fi
 
@@ -171,7 +292,7 @@ EOF
              echo "PASS: grub.cfg contains SONIC_B"
         else
              echo "FAIL: grub.cfg missing SONIC_B"
-             # exit 1
+             exit 1
         fi
 
         # Verify SONIE is last? (or at least present)
@@ -182,8 +303,6 @@ EOF
              # exit 1
         fi
 
-        # Check order? grep output order.
-        # A then B then SONIE.
         local order
         order=$(grep "menuentry " "${grub_cfg}" | cut -d "'" -f 2 | tr '\n' ',')
         if [[ "$order" == "SONIC_A,SONIC_B,SONIE,"* ]]; then
@@ -195,4 +314,11 @@ EOF
     )
 }
 
-test_sonie_update_flow
+# Run tests for all environments
+# sonie: expects NO --no-nvram
+# sonic: expects --no-nvram
+# onie: expects --no-nvram
+
+run_test_case "sonie" "no"
+run_test_case "sonic" "yes"
+run_test_case "onie" "yes"
