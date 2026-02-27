@@ -99,6 +99,8 @@ export CROSS_BUILD_ENVIRON
 export BLDENV
 export BUILD_WORKDIR
 export MIRROR_SNAPSHOT
+export BUILD_PUBLIC_URL
+export BUILD_SNAPSHOT_URL
 export SONIC_OS_VERSION
 export FILES_PATH
 export PROJECT_ROOT
@@ -160,7 +162,7 @@ include $(RULES_PATH)/config
 ###############################################################################
 ## Version control related exports
 ###############################################################################
-export PACKAGE_URL_PREFIX
+export BUILD_PACKAGES_URL
 export TRUSTED_GPG_URLS
 export SONIC_VERSION_CONTROL_COMPONENTS
 DEFAULT_CONTAINER_REGISTRY := $(SONIC_DEFAULT_CONTAINER_REGISTRY)
@@ -439,7 +441,6 @@ $(info "SONIC_CONFIG_PRINT_DEPENDENCIES" : "$(SONIC_CONFIG_PRINT_DEPENDENCIES)")
 $(info "SONIC_BUILD_JOBS"                : "$(SONIC_BUILD_JOBS)")
 $(info "SONIC_CONFIG_MAKE_JOBS"          : "$(SONIC_CONFIG_MAKE_JOBS)")
 $(info "USE_NATIVE_DOCKERD_FOR_BUILD"    : "$(SONIC_CONFIG_USE_NATIVE_DOCKERD_FOR_BUILD)")
-$(info "SONIC_USE_DOCKER_BUILDKIT"       : "$(SONIC_USE_DOCKER_BUILDKIT)")
 $(info "USERNAME"                        : "$(USERNAME)")
 $(info "PASSWORD"                        : "$(PASSWORD)")
 $(info "CHANGE_DEFAULT_PASSWORD"         : "$(CHANGE_DEFAULT_PASSWORD)")
@@ -1261,7 +1262,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 		j2 $($*.gz_PATH)/Dockerfile.j2 > $($*.gz_PATH)/Dockerfile
 		$(call generate_manifest,$*)
 		# Prepare docker build info
-		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
+		BUILD_PACKAGES_URL=$(BUILD_PACKAGES_URL) \
 		SONIC_ENFORCE_VERSIONS=$(SONIC_ENFORCE_VERSIONS) \
 		TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
 		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
@@ -1330,7 +1331,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_DBG_IMAGES)) : $(TARGET_PATH)/%-$(DBG_IMAG
 		j2 $($*.gz_PATH)/Dockerfile-dbg.j2 > $($*.gz_PATH)/Dockerfile-dbg
 		$(call generate_manifest,$*,dbg)
 		# Prepare docker build info
-		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
+		BUILD_PACKAGES_URL=$(BUILD_PACKAGES_URL) \
 		SONIC_ENFORCE_VERSIONS=$(SONIC_ENFORCE_VERSIONS) \
 		TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
 		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
@@ -1435,7 +1436,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_RFS_TARGETS)) : $(TARGET_PATH)/% : \
 		IMAGE_TYPE=$($(installer)_IMAGE_TYPE) \
 		TARGET_PATH=$(TARGET_PATH) \
 		TRUSTED_GPG_URLS=$(TRUSTED_GPG_URLS) \
-		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
+		BUILD_PACKAGES_URL=$(BUILD_PACKAGES_URL) \
 		DBGOPT='$(DBGOPT)' \
 		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
 		MULTIARCH_QEMU_ENVIRON=$(MULTIARCH_QEMU_ENVIRON) \
@@ -1712,6 +1713,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 		SECURE_UPGRADE_PROD_TOOL_ARGS="$(SECURE_UPGRADE_PROD_TOOL_ARGS)" \
 		SECURE_UPGRADE_PROD_TOOL_CONFIG="$(SECURE_UPGRADE_PROD_TOOL_CONFIG)" \
 		PACKAGE_URL_PREFIX=$(PACKAGE_URL_PREFIX) \
+		BUILD_PACKAGES_URL=$(BUILD_PACKAGES_URL) \
 		DBGOPT='$(DBGOPT)' \
 		SONIC_VERSION_CACHE=$(SONIC_VERSION_CACHE) \
 		MULTIARCH_QEMU_ENVIRON=$(MULTIARCH_QEMU_ENVIRON) \
@@ -1828,6 +1830,37 @@ clean-versions :: .platform
 
 vclean:: .platform
 	@sudo rm -rf target/vcache/* target/baseimage*
+
+clean-docker :: .platform
+	@echo "=== Cleaning stale Docker build artifacts ==="
+	@# Remove old sonic-slave images (keep only the current tag)
+	@for img in sonic-slave-bookworm sonic-slave-trixie \
+	            sonic-slave-bookworm-$(USERNAME) sonic-slave-trixie-$(USERNAME) \
+	            tmp-sonic-slave-bookworm tmp-sonic-slave-trixie; do \
+		current_id=$$(docker images --format '{{.ID}}' $$img:$(SLAVE_TAG) 2>/dev/null); \
+		for old_id in $$(docker images --format '{{.ID}} {{.Repository}}:{{.Tag}}' $$img 2>/dev/null | \
+			grep -v "$$current_id" | awk '{print $$2}'); do \
+			echo "Removing old image: $$old_id"; \
+			docker rmi -f $$old_id 2>/dev/null || true; \
+		done; \
+	done
+	@# Remove dangling images
+	@dangling=$$(docker images -q --filter 'dangling=true' 2>/dev/null); \
+	if [ -n "$$dangling" ]; then \
+		echo "Removing $$(echo $$dangling | wc -w) dangling images..."; \
+		docker rmi -f $$dangling 2>/dev/null || true; \
+	fi
+	@# Remove stopped build containers
+	@stopped=$$(docker ps -aq --filter 'status=exited' --filter 'name=sonic' 2>/dev/null); \
+	if [ -n "$$stopped" ]; then \
+		echo "Removing $$(echo $$stopped | wc -w) stopped containers..."; \
+		docker rm $$stopped 2>/dev/null || true; \
+	fi
+	@# Prune build cache
+	@echo "Pruning Docker build cache..."
+	@docker builder prune -f 2>/dev/null || true
+	@echo "=== Docker cleanup complete ==="
+	@docker system df 2>/dev/null || true
 
 clean :: .platform clean-logs clean-versions $$(SONIC_CLEAN_DEBS) $$(SONIC_CLEAN_FILES) $$(SONIC_CLEAN_PHONIES) $$(SONIC_CLEAN_TARGETS) $$(SONIC_CLEAN_STDEB_DEBS) $$(SONIC_CLEAN_WHEELS)
 
