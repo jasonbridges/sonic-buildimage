@@ -44,8 +44,20 @@ exp_onie_firmware="auto"
 exp_onie_skip_ethmgmt_macs="no"
 exp_onie_grub_image_name="grubx64.efi"
 
+# Create sample conf file
+cat > "$MACHINE_CONF" <<EOF
+onie_machine_rev=0
+onie_arch=x86_64
+onie_build_date=2021-02-03T01:50+0800
+onie_partition_type=gpt
+onie_disco_ntpsrv="192.168.0.1 192.168.0.2"
+onie_firmware=auto
+onie_skip_ethmgmt_macs=no
+onie_grub_image_name=grubx64.efi
+EOF
+
 # read the sample conf file
-read_conf_file $MACHINE_CONF
+read_conf_file "$MACHINE_CONF"
 
 # check each variable and its expected value
 TEST_CONF "$onie_machine_rev" "$exp_onie_machine_rev"
@@ -58,4 +70,5 @@ TEST_CONF "$onie_skip_ethmgmt_macs" "$exp_onie_skip_ethmgmt_macs"
 TEST_CONF "$onie_grub_image_name" "$exp_onie_grub_image_name"
 
 echo "PASS!!"
+rm "$MACHINE_CONF"
 exit 0

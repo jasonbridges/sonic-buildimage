@@ -12,7 +12,8 @@ diff --git a/scapy/sendrecv.py b/scapy/sendrecv.py
 index 4f06c19d..503c15c5 100644
 --- a/scapy/sendrecv.py
 +++ b/scapy/sendrecv.py
-@@ -1257,17 +1257,19 @@ class AsyncSniffer(object):
+@@ -1256,17 +1256,19 @@ class AsyncSniffer(object):
+         if not sniff_sockets or iface is not None:
              # The _RL2 function resolves the L2socket of an iface
              _RL2 = lambda i: L2socket or resolve_iface(i).l2listen()  # type: Callable[[_GlobInterfaceType], Callable[..., SuperSocket]]  # noqa: E501
              if isinstance(iface, list):
