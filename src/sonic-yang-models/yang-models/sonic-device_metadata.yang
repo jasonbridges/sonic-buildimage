@@ -18,7 +18,7 @@ module sonic-device_metadata {
     }
 
     description "DEVICE_METADATA YANG Module for SONiC OS";
-    
+
     revision 2026-04-11 {
         description "Adde use_template_render_for_restore to control the method of config restore in FRR.";
     }
@@ -59,6 +59,13 @@ module sonic-device_metadata {
                         length 1..16;
                     }
                     description "asic_id is unique identifier of the asic used by SAI for initialization.";
+                }
+
+                leaf namespace_id {
+                    type string {
+                        length 1..16;
+                    }
+                    description "Namespace ID for multi-ASIC configuration.";
                 }
 
                 leaf default_bgp_status {

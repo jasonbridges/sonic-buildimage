@@ -138,7 +138,7 @@ class TestJ2Files(TestCase):
         argument = ['-m', self.t0_minigraph, '-p', self.t0_port_config, '-a', '{\"hwaddr\":\"e4:1d:2d:a5:f3:ad\"}', '-t', interfaces_template]
         self.run_script(argument, output_file=self.output_file)
         self.assertTrue(utils.cmp(os.path.join(self.test_dir, 'sample_output', utils.PYvX_DIR, 'interfaces'), self.output_file))
-        
+
         # ZTP disabled, MGMT_INTERFACE defined, SYSLOG_SERVER defined
         argument = ['-m', self.t0_minigraph_syslog, '-p', self.t0_port_config, '-a', '{\"hwaddr\":\"e4:1d:2d:a5:f3:ad\"}', '-t', interfaces_template]
         self.run_script(argument, output_file=self.output_file)
@@ -319,7 +319,7 @@ class TestJ2Files(TestCase):
 
         sample_output_file = os.path.join(self.test_dir, 'sample_output', utils.PYvX_DIR, 'ipinip_backend_with_storage_broadcom.json')
         assert utils.cmp(sample_output_file, self.output_file), self.run_diff(sample_output_file, self.output_file)
-    
+
     def test_ipinip_backend_leaf_broadcom_no_storage(self):
         # Broadcom BackEndLeafRouter - 'LeafRouter' substring match makes is_broadcom_t1 true, so dscp_mode "pipe".
         ipinip_file = os.path.join(self.test_dir, '..', '..', '..', 'dockers', 'docker-orchagent', 'ipinip.json.j2')
@@ -810,18 +810,18 @@ class TestJ2Files(TestCase):
                                                 minigraph=test_data[3],
                                                 buffer_template=test_data[4],
                                                 expected=test_data[5])
-            
+
     def test_buffers_lt2_ft2_render_template(self):
         if utils.PYvX_DIR != 'py3':
             # Skip on python2 as the change will not be backported to previous version
             return
-        
+
         TEST_DATA = [
             # (vendor, platform, sku, minigraph, buffer_template, sample_output )
             ('arista', 'x86_64-arista_7060x6_64pe_b', 'Arista-7060X6-64PE-P32O64', 'sample-lt2-p32o64-minigraph.xml', 'buffers.json.j2', 'buffer-lt2-p32o64.json'),
             ('arista', 'x86_64-arista_7060x6_64pe_b', 'Arista-7060X6-64PE-P64', 'sample-ft2-p64-minigraph.xml', 'buffers.json.j2', 'buffer-ft2-p64.json')
         ]
-        
+
         for test_data in TEST_DATA:
             self._test_buffers_render_template(vendor=test_data[0],
                                                 platform=test_data[1],
@@ -862,7 +862,7 @@ class TestJ2Files(TestCase):
                                             minigraph='sample-lrh-nh5010-minigraph.xml',
                                             buffer_template='buffers.json.j2',
                                             expected='buffer-lrh-nh5010.json')
-    
+
     def test_ipinip_multi_asic(self):
         ipinip_file = os.path.join(self.test_dir, '..', '..', '..', 'dockers', 'docker-orchagent', 'ipinip.json.j2')
         argument = ['-m', self.multi_asic_minigraph, '-p', self.multi_asic_port_config, '-t', ipinip_file, '-n', 'asic0']
@@ -920,15 +920,17 @@ class TestJ2Files(TestCase):
                 "output": "t0-switch-masic3.json"
             },
         }
-        for _, v in test_list.items():
-            os.environ["NAMESPACE_ID"] = v["namespace_id"]
-            argument = ["-m", self.t1_mlnx_minigraph, "-y", constants_yml, "-t", switch_template]
-            sample_output_file = os.path.join(
-                self.test_dir, 'sample_output', v["output"]
-            )
-            self.run_script(argument, output_file=self.output_file)
-            assert utils.cmp(sample_output_file, self.output_file), self.run_diff(sample_output_file, self.output_file)
-        os.environ["NAMESPACE_ID"] = ""
+        try:
+            for _, v in test_list.items():
+                os.environ["NAMESPACE_ID"] = v["namespace_id"]
+                argument = ["-m", self.t1_mlnx_minigraph, "-y", constants_yml, "-t", switch_template]
+                sample_output_file = os.path.join(
+                    self.test_dir, 'sample_output', v["output"]
+                )
+                self.run_script(argument, output_file=self.output_file)
+                assert utils.cmp(sample_output_file, self.output_file), self.run_diff(sample_output_file, self.output_file)
+        finally:
+            os.environ["NAMESPACE_ID"] = ""
 
     def test_swss_switch_render_template_t2(self):
         # verify the ECMP hash seed changes per namespace
@@ -950,15 +952,17 @@ class TestJ2Files(TestCase):
                 "output": "t2-switch-masic3.json"
             },
         }
-        for _, v in test_list.items():
-            os.environ["NAMESPACE_ID"] = v["namespace_id"]
-            argument = ["-m", self.t2_sample_graph_chassis_packet, "-y", constants_yml, "-t", switch_template]
-            sample_output_file = os.path.join(
-                self.test_dir, 'sample_output', v["output"]
-            )
-            self.run_script(argument, output_file=self.output_file)
-            assert utils.cmp(sample_output_file, self.output_file), self.run_diff(sample_output_file, self.output_file)
-        os.environ["NAMESPACE_ID"] = ""
+        try:
+            for _, v in test_list.items():
+                os.environ["NAMESPACE_ID"] = v["namespace_id"]
+                argument = ["-m", self.t2_sample_graph_chassis_packet, "-y", constants_yml, "-t", switch_template]
+                sample_output_file = os.path.join(
+                    self.test_dir, 'sample_output', v["output"]
+                )
+                self.run_script(argument, output_file=self.output_file)
+                assert utils.cmp(sample_output_file, self.output_file), self.run_diff(sample_output_file, self.output_file)
+        finally:
+            os.environ["NAMESPACE_ID"] = ""
 
     def test_ndppd_conf(self):
         conf_template = os.path.join(self.test_dir, "ndppd.conf.j2")
@@ -973,10 +977,10 @@ class TestJ2Files(TestCase):
         """Test ndppd.conf generation when no VLAN interfaces exist"""
         conf_template = os.path.join(self.test_dir, "ndppd.conf.j2")
         empty_json = os.path.join(self.test_dir, "data", "ndppd", "empty_vlan_interfaces.json")
-        
+
         argument = ['-j', empty_json, '-t', conf_template]
         self.run_script(argument, output_file=self.output_file)
-        
+
         # Verify route-ttl is still generated even without VLAN interfaces
         with open(self.output_file, 'r') as f:
             content = f.read()
