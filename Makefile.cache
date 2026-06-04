@@ -159,7 +159,7 @@ $(shell test -d $(SONIC_DPKG_LOCAL_CACHE_DIR) || \
 $(shell test -w $(SONIC_DPKG_CACHE_DIR) || sudo chmod 777 $(SONIC_DPKG_CACHE_DIR) )
 
 DOCKER_LOCKFILE_SUFFIX  := access
-DOCKER_LOCKFILE_TIMEOUT := 1200
+DOCKER_LOCKFILE_TIMEOUT := 7200
 
 # Lock macro for shared file access
 # Lock is implemented through flock command with a specified timeout value
@@ -343,7 +343,7 @@ define SAVE_INTO_CACHE
 		1>>$($(1)_DST_PATH)/$(1).log
 	sudo chmod 777 $($(1)_CACHE_DIR)/$(MOD_CACHE_FILE)
 	rm -f $($(1)_DST_PATH)/$(1).cached.log
-	
+
 	echo "File $($(1)_CACHE_DIR)/$(MOD_CACHE_FILE) saved in cache " >> $($(1)_DST_PATH)/$(1).log
 	echo "[ CACHE::SAVED ] $($(1)_CACHE_DIR)/$(MOD_CACHE_FILE)" >> $($(1)_DST_PATH)/$(1).log
 
