@@ -79,6 +79,15 @@ stages:
       jobGroups:
       - name: alpinevs
         continueOnError: true
+  - template: .azure-pipelines/azure-pipelines-build.yml
+    parameters:
+      buildOptions: 'USERNAME=admin SONIC_BUILD_JOBS=$(nproc) ${{ variables.VERSION_CONTROL_OPTIONS }}'
+      jobGroups:
+      - name: sonie-vs
+        variables:
+          PLATFORM_NAME: vs
+        continueOnError: true
+
 
 - stage: Build
   pool: sonicso1ES-amd64
@@ -95,6 +104,10 @@ stages:
           dbg_image: yes
           platform_rpc: brcm
           INCLUDE_RESTAPI: y
+      - name: sonie-broadcom
+        variables:
+          PLATFORM_NAME: broadcom
+        continueOnError: true
       - name: mellanox
         variables:
           dbg_image: yes
@@ -135,7 +148,7 @@ stages:
   - name: PTF_MODIFIED
     # $[ coalesce(stageDependencies.BuildVS.vs.outputs['PublishAndSetPtfTag.PTF_MODIFIED'], stageDependencies.BuildVS.vs.outputs['script.PTF_MODIFIED'], stageDependencies.BuildVS.vs.outputs['script1.PTF_MODIFIED'], 'False') ]
     # Disable in-PR testing of docker-ptf image; To be re-enabled after image can be uploaded to approved ACR
-    value: 'False' 
+    value: 'False'
 
 # For every test job:
 # continueOnError: false means it's a required test job and will block merge if it fails
