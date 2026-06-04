@@ -28,7 +28,7 @@ MODULES_DIR=
 
 SIGNING_CERT=
 SIGNING_KEY=
-CDIR=/sonic/
+CDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/"
 SDIR=$CDIR/platform/${CONFIGURED_PLATFORM}/installer/
 DDIR=$CDIR
 CAPSULE=/lib/firmware/mellanox/boot/capsule/boot_update2.cap
@@ -159,7 +159,7 @@ cleanup_workdir() {
 
 create_workdir() {
     if [[ $WDIR == "" ]]; then
-        WDIR=$(mktemp -d /sonic/bfb-wd-XXXX)
+        WDIR=$(mktemp -d /tmp/bfb-wd-XXXX)
     else
         rm -rf $WDIR/*
     fi
@@ -344,7 +344,7 @@ create_bfb_image() {
            --boot-path "$boot_path" \
            --boot-desc "$boot_desc" \
             ${BFB} ${DDIR}/${OUTPUT_BFB_IMAGE}-intermediate
-            
+
 
     echo "Generating SHA256 hash for BFB file..."
     sha256sum ${DDIR}/${OUTPUT_BFB_IMAGE}-intermediate | awk '{print $1}' > ${DDIR}/${OUTPUT_BFB_IMAGE}-intermediate.sha256
@@ -356,11 +356,11 @@ create_bfb_image() {
     local bfb_intermediate_fullpath="${DDIR}/${OUTPUT_BFB_IMAGE}-intermediate"
     local bfb_basename=$(basename "$bfb_fullpath")
     local bfb_intermediate_basename=$(basename "$bfb_intermediate_fullpath")
-    
+
     pushd "$bfb_dir"
     tar -cf "$bfb_basename" "$bfb_intermediate_basename" "${bfb_intermediate_basename}.sha256"
     popd
-    
+
     echo "BFB is ready: $(readlink -f  ${DDIR}/${OUTPUT_BFB_IMAGE})"
 
     popd
@@ -372,6 +372,11 @@ main() {
     . $CDIR/onie-image-arm64.conf
     # Export ENV Variables for j2cli
     CHROOT_DIR=$CDIR/$FILESYSTEM_ROOT
+    if [[ ! -d "$CHROOT_DIR" ]]; then
+        echo "[create_sonic_image] Warning! Platform-specific chroot $CHROOT_DIR not found, falling back to generic fsroot"
+        FILESYSTEM_ROOT="fsroot"
+        CHROOT_DIR=$CDIR/$FILESYSTEM_ROOT
+    fi
     if [[ ! -d "$CHROOT_DIR" ]]; then
         echo "[create_sonic_image] Error! Path to CHROOT not found"
         exit 1
